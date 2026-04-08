@@ -15,6 +15,7 @@ import Insurance from './pages/patient/Insurance';
 import BloodBanksAndDonation from './pages/patient/BloodBanksAndDonation';
 import History from './pages/patient/History';
 import Bills from './pages/patient/Bills';
+import ConfirmAppointment from './pages/patient/ConfirmAppointment';
 
 import HospitalDashboard from './pages/hospital/Dashboard';
 import HospitalDoctors from './pages/hospital/Doctors';
@@ -79,6 +80,9 @@ function AppRoutes() {
       <Route path="/hospital/analytics"      element={<ProtectedRoute roles={['hospital_admin']}><HospitalAnalytics /></ProtectedRoute>} />
       <Route path="/hospital/qr"             element={<ProtectedRoute roles={['hospital_admin']}><HospitalQR /></ProtectedRoute>} />
       <Route path="/hospital/settings"       element={<ProtectedRoute roles={['hospital_admin']}><HospitalSettings /></ProtectedRoute>} />
+
+       {/* Public SMS confirm link — no auth required */}
+      <Route path="/confirm-appointment/:token" element={<ConfirmAppointment />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

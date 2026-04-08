@@ -39,6 +39,10 @@ export const patientAPI = {
   getQR: () => api.get('/patients/qr'),
   addDocument: (data) => api.post('/patients/documents', data),
   deleteDocument: (id) => api.delete(`/patients/documents/${id}`),
+  // Unified medical benefits (govt + employer + personal)
+  addMedicalBenefit: (data) => api.post('/patients/medical-benefits', data),
+  deleteMedicalBenefit: (id) => api.delete(`/patients/medical-benefits/${id}`),
+  // Legacy
   addGovernmentBenefit: (data) => api.post('/patients/government-benefits', data),
   scanUID: (uid) => api.get(`/patients/scan/${uid}`)
 };
@@ -46,6 +50,7 @@ export const patientAPI = {
 // Hospital
 export const hospitalAPI = {
   search: (params) => api.get('/hospitals', { params }),
+  getTopRated: () => api.get('/hospitals/top'),          // top 3 by weighted rating
   getById: (id) => api.get(`/hospitals/${id}`),
   getAdminProfile: () => api.get('/hospitals/admin/profile'),
   updateProfile: (data) => api.put('/hospitals/admin/profile', data)
@@ -110,6 +115,7 @@ export const appointmentAPI = {
   create: (data) => api.post('/appointments', data),
   getMyAppointments: () => api.get('/appointments/my'),
   getHospitalAppointments: (params) => api.get('/appointments/hospital', { params }),
+  getPendingCount: () => api.get('/appointments/hospital/count'),
   updateStatus: (id, data) => api.put(`/appointments/${id}/status`, data),
   cancel: (id) => api.delete(`/appointments/${id}`)
 };
