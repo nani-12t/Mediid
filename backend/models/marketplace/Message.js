@@ -10,5 +10,4 @@ const messageSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-const marketplaceConn = getMarketplaceConn();
-module.exports = marketplaceConn.model('Message', messageSchema);
+module.exports = mongoose.model('Message', messageSchema);

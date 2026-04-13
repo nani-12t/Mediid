@@ -1,13 +1,13 @@
 const express = require('express');
-const router  = express.Router();
+const router = express.Router();
 const mongoose = require('mongoose');
 const { connectDB } = require('../config/db');
-const jwt     = require('jsonwebtoken');
+const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const User     = require('../models/User');
-const Patient  = require('../models/Patient');
+const User = require('../models/User');
+const Patient = require('../models/Patient');
 const Hospital = require('../models/Hospital');
-const Buyer    = require('../models/marketplace/Buyer');
+const Buyer = require('../models/marketplace/Buyer');
 const { protect } = require('../middleware/auth');
 const { generatePatientIDAndQR, generateHospitalIDAndQR } = require('../utils/idGenerator');
 
@@ -48,12 +48,12 @@ router.post('/register', [
       const name = `${(firstName || '').trim()} ${(lastName || '').trim()}`.trim() || email;
       console.log(`🧬 Generating ID/QR for patient: ${name}`);
       const { uid, qrCode } = await generatePatientIDAndQR({ name, email });
-      
+
       await Patient.create({
-        user:      user._id,
+        user: user._id,
         firstName: (firstName || '').trim(),
-        lastName:  (lastName  || '').trim(),
-        phone:     phone || '',
+        lastName: (lastName || '').trim(),
+        phone: phone || '',
         uid,
         qrCode,
       });
@@ -64,9 +64,9 @@ router.post('/register', [
       const name = (hospitalName || `${firstName || ''} ${lastName || ''}`).trim() || email;
       console.log(`🏥 Generating ID/QR for hospital: ${name}`);
       const { uid, qrCode } = await generateHospitalIDAndQR({ name, email });
-      
+
       await Hospital.create({
-        user:    user._id,
+        user: user._id,
         name,
         uid,
         qrCode,
@@ -79,11 +79,11 @@ router.post('/register', [
       const companyName = (req.body.companyName || `${firstName || ''} ${lastName || ''}`).trim() || email;
       console.log(`🛒 Creating Buyer profile: ${companyName}`);
       const buyer = await Buyer.create({
-        user:        user._id,
+        user: user._id,
         companyName,
-        phone:       phone || '',
+        phone: phone || '',
         description: req.body.description || '',
-        website:     req.body.website || '',
+        website: req.body.website || '',
       });
       console.log(`✅ Buyer profile created: ${buyer._id}`);
       profile = { id: buyer._id, companyName: buyer.companyName };
@@ -93,7 +93,7 @@ router.post('/register', [
     console.log(`🎉 Registration successful for ${email}`);
     res.status(201).json({
       token,
-      user:    { id: user._id, email: user.email, role: user.role },
+      user: { id: user._id, email: user.email, role: user.role },
       profile,
     });
   } catch (error) {
@@ -117,7 +117,7 @@ router.post('/login', [
   try {
     const { email, password } = req.body;
     console.log(`🔐 Login attempt: ${email}`);
-    
+
     // Ensure DB is connected before query
     if (mongoose.connection.readyState === 0) {
       console.log('🔄 Reconnecting to DB for login...');
@@ -154,16 +154,34 @@ router.post('/login', [
     res.json({ token, user: { id: user._id, email: user.email, role: user.role }, profile });
   } catch (error) {
     console.error('❌ Login error detail:', error);
-    res.status(500).json({ 
-      message: 'Server error during login', 
+    res.status(500).json({
+      message: 'Server error during login',
       error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
 
 /* ══════════════════════════════════════════════════
    GET /api/auth/me
+══════════════════════════════════════════════════ */
+router.get('/me', protect, async (req, res) => {
+  try {
+    let profile = null;
+    if (req.user.role === 'patient') {
+      profile = await Patient.findOne({ user: req.user._id });
+    } else if (req.user.role === 'hospital_admin') {
+      profile = await Hospital.findOne({ user: req.user._id });
+    } else if (req.user.role === 'buyer') {
+      profile = await Buyer.findOne({ user: req.user._id });
+    }
+    res.json({ user: req.user, profile });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+module.exports = router;
 ══════════════════════════════════════════════════ */
 router.get('/me', protect, async (req, res) => {
   try {

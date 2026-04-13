@@ -31,11 +31,11 @@ app.use(cors({
     // 3. Allow explicitly listed origins (local + production)
     const normalizedOrigin = (origin || '').toLowerCase().replace(/\/$/, '');
     const isAllowed = allowedOrigins.some(ao => ao.toLowerCase().replace(/\/$/, '') === normalizedOrigin);
-    
+
     if (isAllowed) {
       return callback(null, true);
     }
-    
+
     console.warn('🛑 CORS Blocked origin:', origin);
     callback(new Error('Not allowed by CORS'));
   },

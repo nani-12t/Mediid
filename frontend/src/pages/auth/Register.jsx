@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const ROLES = [
-  { value: 'patient', label: 'Patient', icon: '🧑‍⚕️', desc: 'Manage your medical records' },
+  { value: 'patient', label: 'Seller (Patient)', icon: '🧑‍⚕️', desc: 'Securely store and share your medical records' },
   { value: 'buyer', label: 'Researcher / Buyer', icon: '🔬', desc: 'Post data requirements for research' },
 ];
 
@@ -222,7 +222,7 @@ export default function Register() {
               {loading ? (
                 <><div className="spinner" style={{ width: 18, height: 18, borderTopColor: 'white' }} /> Creating account...</>
               ) : (
-                role === 'buyer' ? '🔬 Create Researcher Account' : '🧑‍⚕️ Create Patient Account'
+                role === 'buyer' ? '🔬 Create Researcher Account' : '🧑‍⚕️ Create Seller Account'
               )}
             </button>
           </form>

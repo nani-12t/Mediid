@@ -18,5 +18,4 @@ const submissionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-const marketplaceConn = getMarketplaceConn();
-module.exports = marketplaceConn.model('Submission', submissionSchema);
+module.exports = mongoose.model('Submission', submissionSchema);

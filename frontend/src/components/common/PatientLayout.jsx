@@ -6,12 +6,8 @@ import { useAuth } from '../../context/AuthContext';
 const navItems = [
   { to: '/dashboard', icon: Home, label: 'Dashboard' },
   { to: '/marketplace', icon: Database, label: 'Data Marketplace' },
-  // { to: '/messages', icon: MessageSquare, label: 'Messages' },
-  { to: '/search', icon: Search, label: 'Find Doctors' },
-  { to: '/appointments', icon: Calendar, label: 'Appointments' },
   { to: '/history', icon: FileText, label: 'Medical History' },
   { to: '/scanner', icon: Maximize, label: 'Scan (OCR)' },
-  { to: '/bills', icon: CreditCard, label: 'Bills & Expenses' },
   { to: '/profile', icon: Users, label: 'My Profile' },
 ];
 

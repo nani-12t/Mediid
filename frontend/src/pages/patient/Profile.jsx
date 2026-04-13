@@ -374,39 +374,15 @@ export default function PatientProfile() {
       </div>
 
       <div className="tabs">
-        <TabButton label="🚨 Emergency Info" active={tab === 'emergency'} onClick={() => setTab('emergency')} />
+        <TabButton label="🚨 Health Details" active={tab === 'emergency'} onClick={() => setTab('emergency')} />
         <TabButton label="📄 Documents"       active={tab === 'documents'} onClick={() => setTab('documents')} />
-        <TabButton label="🏛️ Govt. Benefits"  active={tab === 'benefits'}  onClick={() => setTab('benefits')} />
       </div>
 
-      {/* ═══════ Emergency Info ═══════ */}
       {tab === 'emergency' && (
         <div className="card">
-          {!emergency.aadhaarNumber && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #3b82f6' }}>
-              <Shield size={18} color="#1d4ed8" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div>
-                <p style={{ fontSize: 14, color: '#1e40af', fontWeight: 500, marginBottom: 4 }}>Add Your Aadhaar Number</p>
-                <p style={{ fontSize: 13, color: '#1e40af', lineHeight: 1.4 }}>
-                  Provide your Aadhaar number to automatically check eligibility for government health schemes like Ayushman Bharat, ESI, CGHS, and state health programs.
-                </p>
-              </div>
-            </div>
-          )}
-          {emergency.aadhaarNumber && emergency.aadhaarNumber.length === 12 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 14px', background: '#ecfdf5', borderRadius: 8, border: '1px solid #10b981' }}>
-              <Shield size={18} color="#059669" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div>
-                <p style={{ fontSize: 14, color: '#047857', fontWeight: 500, marginBottom: 4 }}>Aadhaar Verified</p>
-                <p style={{ fontSize: 13, color: '#047857', lineHeight: 1.4 }}>
-                  Your Aadhaar number has been saved. You can now add government benefit cards in the "Govt. Benefits" tab.
-                </p>
-              </div>
-            </div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 14px', background: '#fff1f2', borderRadius: 8, border: '1px solid #fecdd3' }}>
-            <AlertCircle size={16} color="#e11d48" />
-            <p style={{ fontSize: 13, color: '#9f1239' }}>This info is always visible when your QR is scanned — even in emergencies without your consent.</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #3b82f6' }}>
+            <Shield size={18} color="#1d4ed8" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 13, color: '#1e40af' }}>This forms the core health data of your Digi Locker.</p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="form-group">
@@ -415,14 +391,6 @@ export default function PatientProfile() {
                 <option value="">Select</option>
                 {BLOOD_GROUPS.map(g => <option key={g}>{g}</option>)}
               </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Aadhaar Number</label>
-              <input className="form-input" type="text" placeholder="XXXX XXXX XXXX"
-                value={emergency.aadhaarNumber}
-                onChange={e => setEmergency({ ...emergency, aadhaarNumber: e.target.value.replace(/\D/g, '').slice(0, 12) })}
-                maxLength="12" />
-              <small style={{ color: 'var(--gray-500)', fontSize: 12, marginTop: 4, display: 'block' }}>Enter 12-digit Aadhaar number</small>
             </div>
             <div className="form-group">
               <label className="form-label">Allergies (comma separated)</label>
@@ -436,16 +404,8 @@ export default function PatientProfile() {
               <label className="form-label">Current Medications</label>
               <input className="form-input" placeholder="Metformin 500mg, Amlodipine 5mg" value={emergency.currentMedications} onChange={e => setEmergency({ ...emergency, currentMedications: e.target.value })} />
             </div>
-            <div className="form-group">
-              <label className="form-label">Emergency Contact Name</label>
-              <input className="form-input" placeholder="Family member / friend" value={emergency.emergencyContactName} onChange={e => setEmergency({ ...emergency, emergencyContactName: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Emergency Contact Phone</label>
-              <input className="form-input" type="tel" placeholder="+91 98765 43210" value={emergency.emergencyContactPhone} onChange={e => setEmergency({ ...emergency, emergencyContactPhone: e.target.value })} />
-            </div>
           </div>
-          <button className="btn btn-primary" onClick={saveEmergency} disabled={saving}>{saving ? 'Saving...' : '💾 Save Emergency Info'}</button>
+          <button className="btn btn-primary" onClick={saveEmergency} disabled={saving}>{saving ? 'Saving...' : '💾 Save Health Details'}</button>
         </div>
       )}
 

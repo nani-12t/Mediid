@@ -93,7 +93,7 @@ export default function Login() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Link to="/register?role=patient" className="btn btn-secondary" style={{ justifyContent: 'center', fontSize: 13, background: 'var(--gray-50)' }}>🧑‍⚕️ Patient</Link>
+            <Link to="/register?role=patient" className="btn btn-secondary" style={{ justifyContent: 'center', fontSize: 13, background: 'var(--gray-50)' }}>🧑‍⚕️ Seller (Patient)</Link>
             <Link to="/register?role=buyer" className="btn btn-secondary" style={{ justifyContent: 'center', fontSize: 13, background: 'var(--gray-50)' }}>🔬 Buyer / Researcher</Link>
           </div>
         </div>

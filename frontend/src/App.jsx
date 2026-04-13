@@ -9,14 +9,14 @@ import Register from './pages/auth/Register';
 
 import PatientDashboard from './pages/patient/Dashboard';
 import PatientProfile from './pages/patient/Profile';
-import PatientAppointments from './pages/patient/Appointments';
-import SearchHospitals from './pages/patient/SearchHospitals';
+// import PatientAppointments from './pages/patient/Appointments';
+// import SearchHospitals from './pages/patient/SearchHospitals';
 import Insurance from './pages/patient/Insurance';
 import BloodBanksAndDonation from './pages/patient/BloodBanksAndDonation';
 import History from './pages/patient/History';
 import DocumentScanner from './pages/patient/DocumentScanner';
 import Bills from './pages/patient/Bills';
-import ConfirmAppointment from './pages/patient/ConfirmAppointment';
+// import ConfirmAppointment from './pages/patient/ConfirmAppointment';
 import PatientMarketplace from './pages/patient/Marketplace';
 
 import ChatPortal from './pages/common/ChatPortal';
@@ -25,14 +25,14 @@ import BuyerDashboard from './pages/buyer/Dashboard';
 import PostRequirement from './pages/buyer/PostRequirement';
 import ViewSubmissions from './pages/buyer/ViewSubmissions';
 
-import HospitalDashboard from './pages/hospital/Dashboard';
-import HospitalDoctors from './pages/hospital/Doctors';
-import HospitalStaff from './pages/hospital/Staff';
-import HospitalAppointments from './pages/hospital/Appointments';
-import HospitalReports from './pages/hospital/Reports';
-import HospitalAnalytics from './pages/hospital/Analytics';
-import HospitalSettings from './pages/hospital/Settings';
-import HospitalQR from './pages/hospital/HospitalQR';
+// import HospitalDashboard from './pages/hospital/Dashboard';
+// import HospitalDoctors from './pages/hospital/Doctors';
+// import HospitalStaff from './pages/hospital/Staff';
+// import HospitalAppointments from './pages/hospital/Appointments';
+// import HospitalReports from './pages/hospital/Reports';
+// import HospitalAnalytics from './pages/hospital/Analytics';
+// import HospitalSettings from './pages/hospital/Settings';
+// import HospitalQR from './pages/hospital/HospitalQR';
 
 const ProtectedRoute = ({ children, roles }) => {
   const { user, loading } = useAuth();
@@ -63,8 +63,8 @@ function AppRoutes() {
       {/* Patient */}
       <Route path="/dashboard"    element={<ProtectedRoute roles={['patient']}><PatientDashboard /></ProtectedRoute>} />
       <Route path="/profile"      element={<ProtectedRoute roles={['patient']}><PatientProfile /></ProtectedRoute>} />
-      <Route path="/appointments" element={<ProtectedRoute roles={['patient']}><PatientAppointments /></ProtectedRoute>} />
-      <Route path="/search"       element={<ProtectedRoute roles={['patient']}><SearchHospitals /></ProtectedRoute>} />
+      {/* <Route path="/appointments" element={<ProtectedRoute roles={['patient']}><PatientAppointments /></ProtectedRoute>} /> */}
+      {/* <Route path="/search"       element={<ProtectedRoute roles={['patient']}><SearchHospitals /></ProtectedRoute>} /> */}
       {/* <Route path="/insurance"    element={<ProtectedRoute roles={['patient']}><Insurance /></ProtectedRoute>} /> */}
       {/* <Route path="/blood-donation" element={<ProtectedRoute roles={['patient']}><BloodBanksAndDonation /></ProtectedRoute>} /> */}
       <Route path="/history"       element={<ProtectedRoute roles={['patient']}><History /></ProtectedRoute>} />
@@ -92,7 +92,7 @@ function AppRoutes() {
       <Route path="/hospital/settings"       element={<ProtectedRoute roles={['hospital_admin']}><HospitalSettings /></ProtectedRoute>} /> */}
 
        {/* Public SMS confirm link — no auth required */}
-      <Route path="/confirm-appointment/:token" element={<ConfirmAppointment />} />
+      {/* <Route path="/confirm-appointment/:token" element={<ConfirmAppointment />} /> */}
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

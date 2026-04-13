@@ -26,5 +26,4 @@ const requirementSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-const marketplaceConn = getMarketplaceConn();
-module.exports = marketplaceConn.model('Requirement', requirementSchema);
+module.exports = mongoose.model('Requirement', requirementSchema);

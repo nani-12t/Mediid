@@ -8,7 +8,7 @@ export default function PatientHistory() {
   const [appointments, setAppointments] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('appointments');
+  const [activeTab, setActiveTab] = useState('history');
 
   const loadData = async () => {
     setLoading(true);
@@ -347,18 +347,12 @@ export default function PatientHistory() {
             Medical History
           </h2>
           <p style={{ color: 'var(--gray-500)', fontSize: 14 }}>
-            {completedAppointments.length} checkups • {medicalHistory.length} records • {documents.length} documents
+            {medicalHistory.length} records • {documents.length} documents
           </p>
         </div>
       </div>
 
       <div className="tabs">
-        <button
-          className={`tab-btn ${activeTab === 'appointments' ? 'active' : ''}`}
-          onClick={() => setActiveTab('appointments')}
-        >
-          Checkups ({completedAppointments.length})
-        </button>
         <button
           className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => setActiveTab('history')}
@@ -379,7 +373,6 @@ export default function PatientHistory() {
         </div>
       ) : (
         <>
-          {activeTab === 'appointments' && renderAppointments()}
           {activeTab === 'history' && renderMedicalHistory()}
           {activeTab === 'documents' && renderDocuments()}
         </>

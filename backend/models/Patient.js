@@ -18,39 +18,39 @@ const medicalBenefitSchema = new mongoose.Schema({
     default: 'other_govt',
   },
 
-  schemeName:       String,   // "Ayushman Bharat PMJAY" / "Star Health Group Mediclaim"
-  cardNumber:       String,
-  policyNumber:     String,   // insurance policy number
-  beneficiaryName:  String,   // name on card
+  schemeName: String,   // "Ayushman Bharat PMJAY" / "Star Health Group Mediclaim"
+  cardNumber: String,
+  policyNumber: String,   // insurance policy number
+  beneficiaryName: String,   // name on card
 
   // Employer details (only for employer source)
-  employerName:     String,   // company name
-  employeeId:       String,   // employee ID / staff ID
-  designation:      String,   // job role
+  employerName: String,   // company name
+  employeeId: String,   // employee ID / staff ID
+  designation: String,   // job role
 
   // Insurer / TPA
-  insurerName:      String,   // "Star Health" / "United India" / "New India Assurance"
-  tpaName:          String,   // Third Party Administrator name
-  tpaPhone:         String,
+  insurerName: String,   // "Star Health" / "United India" / "New India Assurance"
+  tpaName: String,   // Third Party Administrator name
+  tpaPhone: String,
 
   // Coverage
-  coverageAmount:   Number,   // total sum insured ₹
-  roomRentLimit:    Number,   // per day room rent cap ₹
-  familyCovered:    { type: Boolean, default: false },
-  familyMembers:    [String], // names of covered dependents
+  coverageAmount: Number,   // total sum insured ₹
+  roomRentLimit: Number,   // per day room rent cap ₹
+  familyCovered: { type: Boolean, default: false },
+  familyMembers: [String], // names of covered dependents
 
   // Validity
-  validFrom:        Date,
-  validUntil:       Date,
+  validFrom: Date,
+  validUntil: Date,
 
   // Misc
-  hospitalNetwork:  String,   // "Cashless at 5000+ hospitals"
-  claimProcess:     String,   // "Cashless / Reimbursement"
-  helplineNumber:   String,
-  notes:            String,
+  hospitalNetwork: String,   // "Cashless at 5000+ hospitals"
+  claimProcess: String,   // "Cashless / Reimbursement"
+  helplineNumber: String,
+  notes: String,
 
-  isActive:         { type: Boolean, default: true },
-  addedAt:          { type: Date, default: Date.now },
+  isActive: { type: Boolean, default: true },
+  addedAt: { type: Date, default: Date.now },
 });
 
 const medicalDocumentSchema = new mongoose.Schema({
@@ -67,15 +67,15 @@ const medicalDocumentSchema = new mongoose.Schema({
 });
 
 const patientSchema = new mongoose.Schema({
-  user:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  uid:     { type: String, unique: true, default: generatePatientUID },
-  qrCode:  { type: String },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  uid: { type: String, unique: true, default: generatePatientUID },
+  qrCode: { type: String },
 
-  firstName:    { type: String, required: true },
-  lastName:     { type: String, required: true },
-  dateOfBirth:  Date,
-  gender:       { type: String, enum: ['male', 'female', 'other'] },
-  phone:        String,
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  dateOfBirth: Date,
+  gender: { type: String, enum: ['male', 'female', 'other'] },
+  phone: String,
   address: {
     street: String, city: String, state: String, pincode: String,
     country: { type: String, default: 'India' },
@@ -83,15 +83,15 @@ const patientSchema = new mongoose.Schema({
   profilePhoto: String,
 
   emergency: {
-    bloodGroup:               { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] },
-    allergies:                [String],
-    chronicConditions:        [String],
-    currentMedications:       [String],
-    emergencyContactName:     String,
-    emergencyContactPhone:    String,
+    bloodGroup: { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] },
+    allergies: [String],
+    chronicConditions: [String],
+    currentMedications: [String],
+    emergencyContactName: String,
+    emergencyContactPhone: String,
     emergencyContactRelation: String,
-    aadhaarNumber:            String,
-    organDonor:               { type: Boolean, default: false },
+    aadhaarNumber: String,
+    organDonor: { type: Boolean, default: false },
   },
 
   medicalHistory: [{
@@ -99,21 +99,21 @@ const patientSchema = new mongoose.Schema({
     hospital: String, doctor: String, notes: String,
   }],
 
-  documents:        [medicalDocumentSchema],
+  documents: [medicalDocumentSchema],
 
   // Unified medical benefits (govt + employer + personal)
-  medicalBenefits:  [medicalBenefitSchema],
+  medicalBenefits: [medicalBenefitSchema],
 
   // Legacy field — kept for backward compat, new data goes to medicalBenefits
   governmentBenefits: [{
-    type:            { type: String, enum: ['ayushman', 'esi', 'cghs', 'state', 'insurance', 'other'] },
-    schemeName:      String,
-    cardNumber:      String,
+    type: { type: String, enum: ['ayushman', 'esi', 'cghs', 'state', 'insurance', 'other'] },
+    schemeName: String,
+    cardNumber: String,
     beneficiaryName: String,
-    coverageAmount:  Number,
-    validFrom:       Date,
-    validUntil:      Date,
-    isActive:        { type: Boolean, default: true },
+    coverageAmount: Number,
+    validFrom: Date,
+    validUntil: Date,
+    isActive: { type: Boolean, default: true },
   }],
 
   insurancePolicies: [{
@@ -122,9 +122,9 @@ const patientSchema = new mongoose.Schema({
     agentName: String, agentPhone: String,
   }],
 
-  trustedDoctors:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' }],
+  trustedDoctors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' }],
   trustedHospitals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' }],
-  qrActive:         { type: Boolean, default: true },
+  qrActive: { type: Boolean, default: true },
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
@@ -134,4 +134,5 @@ patientSchema.virtual('fullName').get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
 
+module.exports = mongoose.model('Patient', patientSchema);
 module.exports = mongoose.model('Patient', patientSchema);

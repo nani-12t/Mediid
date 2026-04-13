@@ -32,23 +32,12 @@ const connectDB = async () => {
 };
 
 const getMarketplaceConn = () => {
-    if (marketplaceConn) return marketplaceConn;
-    
-    // Derive marketplace URI by replacing the DB name if not explicitly provided
-    const mainUri = process.env.MONGO_URI;
-    const marketplaceUri = process.env.MARKETPLACE_URI || mainUri.replace(/\/[^/?]+(\?|$)/, '/mediid_marketplace$1');
-    
-    console.log('🔄 Initializing Marketplace MongoDB connection...');
-    marketplaceConn = mongoose.createConnection(marketplaceUri, {
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
-        family: 4
-    });
-
-    marketplaceConn.on('connected', () => console.log('✅ Marketplace DB Connected'));
-    marketplaceConn.on('error', (err) => console.error('❌ Marketplace DB Error:', err));
-
-    return marketplaceConn;
+    // Simply reuse the existing Primary connection so everything stays in `mediid_marketplace_db`
+    if (mongoose.connection.readyState >= 1) {
+        return mongoose.connection;
+    }
+    console.warn('⚠️ getMarketplaceConn called before Primary DB connected.');
+    return mongoose.connection;
 };
 
 module.exports = { connectDB, getMarketplaceConn };
