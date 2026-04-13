@@ -19,7 +19,13 @@ export default function Login() {
     try {
       const data = await login(form.email, form.password);
       toast.success(`Welcome back!`);
-      navigate(data.user.role === 'hospital_admin' ? '/hospital' : '/dashboard');
+      if (data.user.role === 'buyer') {
+        navigate('/buyer/dashboard');
+      } else if (data.user.role === 'hospital_admin') {
+        navigate('/hospital');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {
@@ -87,8 +93,8 @@ export default function Login() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Link to="/register?role=hospital_admin" className="btn btn-secondary" style={{ justifyContent: 'center', fontSize: 13 }}>🏥 Hospital Admin</Link>
-            <Link to="/register?role=patient" className="btn btn-secondary" style={{ justifyContent: 'center', fontSize: 13 }}>🧑‍⚕️ Patient</Link>
+            <Link to="/register?role=patient" className="btn btn-secondary" style={{ justifyContent: 'center', fontSize: 13, background: 'var(--gray-50)' }}>🧑‍⚕️ Patient</Link>
+            <Link to="/register?role=buyer" className="btn btn-secondary" style={{ justifyContent: 'center', fontSize: 13, background: 'var(--gray-50)' }}>🔬 Buyer / Researcher</Link>
           </div>
         </div>
       </div>

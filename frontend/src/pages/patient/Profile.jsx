@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { User, Shield, FileText, Upload, Trash2, Plus, X, Heart, Phone, AlertCircle, CheckCircle, File, Building2, Briefcase, BadgeCheck, Clock } from 'lucide-react';
+import { User, Shield, FileText, Upload, Trash2, Plus, X, Heart, Phone, AlertCircle, CheckCircle, File, Clock } from 'lucide-react';
 import PatientLayout from '../../components/common/PatientLayout';
 import { patientAPI } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
@@ -165,6 +165,7 @@ export default function PatientProfile() {
   const [showBenefitModal, setShowBenefitModal] = useState(false);
   const [docUploading, setDocUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [docFilter, setDocFilter] = useState('all');
   const fileRef = useRef(null);
 
   const [docForm, setDocForm] = useState(EMPTY_DOC);
@@ -200,7 +201,10 @@ export default function PatientProfile() {
           emergencyContactRelation: data.emergency?.emergencyContactRelation || '',
           aadhaarNumber: data.emergency?.aadhaarNumber || '',
         });
-      } catch (e) {}
+      } catch (e) {
+        console.warn('⚠️ No profile found for this user.');
+        setPatient({}); // Set to empty object to stop 'Loading...' state
+      }
     };
     load();
   }, []);
@@ -448,8 +452,27 @@ export default function PatientProfile() {
       {/* ═══════ Documents ═══════ */}
       {tab === 'documents' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <button className="btn btn-primary" onClick={() => setShowDocModal(true)}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+              <button
+                className={`badge ${docFilter === 'all' ? 'badge-blue' : 'badge-gray'}`}
+                style={{ padding: '6px 12px', cursor: 'pointer', border: '1px solid transparent', fontSize: 13, borderColor: docFilter === 'all' ? 'var(--blue)' : 'var(--gray-200)' }}
+                onClick={() => setDocFilter('all')}
+              >
+                All
+              </button>
+              {DOC_TYPES.map(type => (
+                <button
+                  key={type.value}
+                  className={`badge ${docFilter === type.value ? docTypeColors[type.value] : 'badge-gray'}`}
+                  style={{ padding: '6px 12px', cursor: 'pointer', border: '1px solid transparent', fontSize: 13, borderColor: docFilter === type.value ? 'initial' : 'var(--gray-200)', whiteSpace: 'nowrap' }}
+                  onClick={() => setDocFilter(type.value)}
+                >
+                  {type.label.split(' ')[0]} {type.label.split(' ').slice(1).join(' ')}
+                </button>
+              ))}
+            </div>
+            <button className="btn btn-primary" onClick={() => setShowDocModal(true)} style={{ flexShrink: 0 }}>
               <Plus size={16} /> Upload Document
             </button>
           </div>
@@ -462,9 +485,21 @@ export default function PatientProfile() {
                 <Plus size={15} /> Upload your first document
               </button>
             </div>
-          ) : (
+          ) : (() => {
+            const visibleDocs = docFilter === 'all' 
+              ? patient.documents 
+              : patient.documents.filter(d => d.type === docFilter);
+              
+            if (visibleDocs.length === 0) return (
+              <div className="card empty-state" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                <FileText size={48} style={{ margin: '0 auto 14px', opacity: 0.2 }} />
+                <p style={{ fontSize: 15, color: 'var(--gray-400)' }}>No {docFilter.replace('_', ' ')}s found.</p>
+              </div>
+            );
+            
+            return (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-              {patient.documents.map(doc => (
+              {visibleDocs.map(doc => (
                 <div key={doc._id} className="card" style={{ position: 'relative' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                     <div style={{ fontSize: 28, flexShrink: 0 }}>{docTypeEmojis[doc.type] || '📄'}</div>
@@ -494,7 +529,8 @@ export default function PatientProfile() {
                 </div>
               ))}
             </div>
-          )}
+            );
+          })()}
         </div>
       )}
 
@@ -610,21 +646,23 @@ export default function PatientProfile() {
                   style={{ display: 'none' }} onChange={handleFileChange} />
 
                 {docForm.file ? (
-                  /* File chosen — preview row */
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, background: '#f0faf8', border: '1.5px solid var(--teal)' }}>
-                    <CheckCircle size={20} color="var(--teal)" style={{ flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docForm.file.name}</p>
-                      <p style={{ fontSize: 11, color: 'var(--gray-400)' }}>{(docForm.file.size / 1024).toFixed(0)} KB</p>
+                  <>
+                    {/* File chosen — preview row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, background: '#f0faf8', border: '1.5px solid var(--teal)' }}>
+                      <CheckCircle size={20} color="var(--teal)" style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{docForm.file.name}</p>
+                        <p style={{ fontSize: 11, color: 'var(--gray-400)' }}>{(docForm.file.size / 1024).toFixed(0)} KB</p>
+                      </div>
+                      <button onClick={removeFile} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 4 }}>
+                        <X size={16} />
+                      </button>
+                      <button onClick={() => fileRef.current?.click()}
+                        style={{ fontSize: 12, color: 'var(--teal)', background: 'none', border: '1px solid var(--teal)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        Change
+                      </button>
                     </div>
-                    <button onClick={removeFile} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 4 }}>
-                      <X size={16} />
-                    </button>
-                    <button onClick={() => fileRef.current?.click()}
-                      style={{ fontSize: 12, color: 'var(--teal)', background: 'none', border: '1px solid var(--teal)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      Change
-                    </button>
-                  </div>
+                  </>
                 ) : (
                   /* Drag & drop zone */
                   <div style={dropzone}

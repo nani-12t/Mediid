@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { QrCode, Calendar, Search, Heart, FileText, Shield, AlertTriangle, ChevronRight, Star } from 'lucide-react';
+import { Maximize, Calendar, Search, Heart, FileText, Shield, AlertTriangle, ChevronRight, Star } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import PatientLayout from '../../components/common/PatientLayout';
 import { patientAPI, appointmentAPI } from '../../utils/api';
@@ -15,7 +15,7 @@ const SAMPLE_HOSPITALS = [
 const quickActions = [
   { label: 'Find Doctors', icon: Search, to: '/search', color: '#38bdf8', bg: '#eff6ff' },
   { label: 'My Appointments', icon: Calendar, to: '/appointments', color: '#8b5cf6', bg: '#f5f3ff' },
-  { label: 'Insurance', icon: Shield, to: '/insurance', color: '#f97066', bg: '#fff1f2' },
+  // { label: 'Insurance', icon: Shield, to: '/insurance', color: '#f97066', bg: '#fff1f2' },
   { label: 'My Reports', icon: FileText, to: '/profile?tab=documents', color: '#10b981', bg: '#ecfdf5' },
 ];
 
@@ -43,6 +43,13 @@ export default function PatientDashboard() {
   const uid = profile?.uid || qrData?.uid || 'MID-XXXXXXXX';
   const patientName = profile ? `${profile.firstName} ${profile.lastName}` : user?.email;
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning 🌅';
+    if (hour < 17) return 'Good afternoon ☀️';
+    return 'Good evening 🌙';
+  };
+
   return (
     <PatientLayout title="Dashboard">
       {/* Welcome Banner */}
@@ -50,10 +57,10 @@ export default function PatientDashboard() {
         <div style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(0,180,160,0.1)' }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 20 }}>
           <div>
-            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, marginBottom: 4 }}>Good morning 👋</p>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, marginBottom: 4 }}>{getGreeting()}</p>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 24, color: 'white', marginBottom: 8 }}>{patientName}</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,180,160,0.2)', borderRadius: 8, padding: '6px 14px', display: 'inline-flex' }}>
-              <QrCode size={16} color="var(--teal)" />
+              <Maximize size={16} color="var(--teal)" />
               <span style={{ color: 'var(--teal)', fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 600, letterSpacing: '0.05em' }}>{uid}</span>
             </div>
           </div>
@@ -64,7 +71,7 @@ export default function PatientDashboard() {
               <QRCodeSVG value={`mediid:${uid}`} size={100} level="H" fgColor="var(--navy)" />
             ) : (
               <div style={{ width: 100, height: 100, background: 'var(--gray-100)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <QrCode size={40} color="var(--gray-400)" />
+                <Maximize size={40} color="var(--gray-400)" />
               </div>
             )}
             <p className="qr-uid" style={{ fontSize: 11 }}>{uid}</p>

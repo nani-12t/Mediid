@@ -2,26 +2,32 @@
   "name": "mediid-frontend",
   "version": "1.0.0",
   "private": true,
+  "proxy": "http://localhost:5000",
   "dependencies": {
     "@tailwindcss/forms": "^0.5.7",
     "axios": "^1.6.2",
     "framer-motion": "^10.16.16",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.303.0",
     "qrcode.react": "^3.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.21.1",
     "react-scripts": "5.0.1",
-    "react-hot-toast": "^2.4.1",
     "recharts": "^2.10.3"
   },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build"
   },
-  "proxy": "http://localhost:5000",
   "browserslist": {
-    "production": [">0.2%", "not dead"],
-    "development": ["last 1 chrome version"]
+    "production": [
+      ">0.2%",
+      "not dead"
+    ],
+    "development": [
+      "last 1 chrome version"
+    ]
   }
 }

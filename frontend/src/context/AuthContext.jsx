@@ -14,9 +14,11 @@ export const AuthProvider = ({ children }) => {
     if (!token) { setLoading(false); return; }
     try {
       const { data } = await authAPI.me();
+      console.log('👤 User loaded successfully:', data.user.email);
       setUser(data.user);
       setProfile(data.profile);
-    } catch {
+    } catch (err) {
+      console.error('❌ Auth initialization failed:', err.message);
       localStorage.removeItem('mediid_token');
     } finally {
       setLoading(false);

@@ -44,20 +44,26 @@ const daysFromNow = (n) => new Date(Date.now() + n * 86400000);
 const daysAgo = (n) => new Date(Date.now() - n * 86400000);
 
 // ─── Main Seed Function ─────────────────────────────────────────────────────
-async function seed() {
-  await mongoose.connect(MONGO_URI);
-  console.log('✅ Connected to MongoDB:', MONGO_URI);
+async function seedData() {
+  // Check if seeding is already done
+  try {
+    const existingUsers = await User.countDocuments();
+    if (existingUsers > 0) {
+      console.log('✅ Database already seeded. Skipping...');
+      return { success: true, message: 'Database already has data. Skipping seed.' };
+    }
+  } catch (err) {
+    console.error('❌ Error checking for existing data:', err.message);
+  }
 
-  // Clear existing data
+  // Clear existing data (extra safety for Vercel)
   console.log('\n🗑️  Clearing existing seed data...');
-  await Promise.all([
-    User.deleteMany({}),
-    Hospital.deleteMany({}),
-    Doctor.deleteMany({}),
-    Staff.deleteMany({}),
-    Patient.deleteMany({}),
-    Appointment.deleteMany({})
-  ]);
+  await User.deleteMany({});
+  await Hospital.deleteMany({});
+  await Doctor.deleteMany({});
+  await Staff.deleteMany({});
+  await Patient.deleteMany({});
+  await Appointment.deleteMany({});
   console.log('   Done.\n');
 
   // ═══════════════════════════════════════════════════════════
@@ -508,6 +514,37 @@ async function seed() {
   });
   console.log(`   ✅ Patient ID: ${p3uid} — Ramesh Patel`);
 
+  // Patient 4 — teajaaravindbandaru@gmail.com
+  const p4User = await User.create({
+    email: 'teajaaravindbandaru@gmail.com',
+    password: 'Test@1234',
+    role: 'patient'
+  });
+  const { uid: p4uid, qrCode: p4qr } = await generatePatientIDAndQR({ name: 'Aravind Bandaru', email: 'teajaaravindbandaru@gmail.com' });
+  await Patient.create({
+    user: p4User._id,
+    uid: p4uid,
+    qrCode: p4qr,
+    firstName: 'Aravind',
+    lastName: 'Bandaru',
+    dateOfBirth: new Date('1995-10-10'),
+    gender: 'male',
+    phone: '+91-9000000000',
+    address: { street: 'Main Road', city: 'Hyderabad', state: 'Telangana', pincode: '500001' },
+    emergency: {
+      bloodGroup: 'O+',
+      allergies: ['Dust'],
+      chronicConditions: ['None'],
+      currentMedications: ['None'],
+      emergencyContactName: 'Family Member',
+      emergencyContactPhone: '+91-9000000001',
+      emergencyContactRelation: 'Parent',
+      organDonor: true
+    },
+    qrActive: true
+  });
+  console.log(`   ✅ Patient ID: ${p4uid} — Aravind Bandaru`);
+
   // ═══════════════════════════════════════════════════════════
   // APPOINTMENTS
   // ═══════════════════════════════════════════════════════════
@@ -623,12 +660,22 @@ async function seed() {
   console.log(`   Patient  : ${p1uid}`);
   console.log('═'.repeat(60) + '\n');
 
+}
+
+async function runSeed() {
+  await mongoose.connect(MONGO_URI);
+  console.log('✅ Connected to MongoDB:', MONGO_URI);
+  await seedData();
   await mongoose.disconnect();
   process.exit(0);
 }
 
-seed().catch(err => {
-  console.error('\n❌ Seed failed:', err.message);
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  runSeed().catch(err => {
+    console.error('\n❌ Seed failed:', err.message);
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = seedData;

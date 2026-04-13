@@ -159,12 +159,15 @@ router.get('/confirm/:token', async (req, res) => {
 router.get('/my', protect, authorize('patient'), async (req, res) => {
   try {
     const patient = await Patient.findOne({ user: req.user._id });
+    if (!patient) return res.json([]); // Return empty list instead of crashing
+    
     const appointments = await Appointment.find({ patient: patient._id })
       .populate('doctor',   'firstName lastName specialization photo consultationFee')
       .populate('hospital', 'name address contact')
       .sort({ appointmentDate: -1 });
     res.json(appointments);
   } catch (err) {
+    console.error('Fetch appointments error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });

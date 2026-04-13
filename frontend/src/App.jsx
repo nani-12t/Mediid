@@ -14,8 +14,16 @@ import SearchHospitals from './pages/patient/SearchHospitals';
 import Insurance from './pages/patient/Insurance';
 import BloodBanksAndDonation from './pages/patient/BloodBanksAndDonation';
 import History from './pages/patient/History';
+import DocumentScanner from './pages/patient/DocumentScanner';
 import Bills from './pages/patient/Bills';
 import ConfirmAppointment from './pages/patient/ConfirmAppointment';
+import PatientMarketplace from './pages/patient/Marketplace';
+
+import ChatPortal from './pages/common/ChatPortal';
+
+import BuyerDashboard from './pages/buyer/Dashboard';
+import PostRequirement from './pages/buyer/PostRequirement';
+import ViewSubmissions from './pages/buyer/ViewSubmissions';
 
 import HospitalDashboard from './pages/hospital/Dashboard';
 import HospitalDoctors from './pages/hospital/Doctors';
@@ -36,21 +44,12 @@ const ProtectedRoute = ({ children, roles }) => {
 
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
-  const location = useLocation();
-
-  useEffect(() => {
-    if (!loading && !user) {
-      // Check if it's a page refresh
-      const navigation = performance.getEntriesByType('navigation')[0];
-      if (navigation && navigation.type === 'reload') {
-        // Redirect to landing on refresh
-        window.location.href = '/';
-      }
-    }
-  }, [loading, user, location]);
-
   if (loading) return null;
-  if (user) return <Navigate to={user.role === 'hospital_admin' ? '/hospital' : '/dashboard'} replace />;
+  if (user) {
+    if (user.role === 'buyer') return <Navigate to="/buyer/dashboard" replace />;
+    if (user.role === 'hospital_admin') return <Navigate to="/hospital" replace />;
+    return <Navigate to="/dashboard" replace />;
+  }
   return children;
 };
 
@@ -66,20 +65,31 @@ function AppRoutes() {
       <Route path="/profile"      element={<ProtectedRoute roles={['patient']}><PatientProfile /></ProtectedRoute>} />
       <Route path="/appointments" element={<ProtectedRoute roles={['patient']}><PatientAppointments /></ProtectedRoute>} />
       <Route path="/search"       element={<ProtectedRoute roles={['patient']}><SearchHospitals /></ProtectedRoute>} />
-      <Route path="/insurance"    element={<ProtectedRoute roles={['patient']}><Insurance /></ProtectedRoute>} />
-      <Route path="/blood-donation" element={<ProtectedRoute roles={['patient']}><BloodBanksAndDonation /></ProtectedRoute>} />
+      {/* <Route path="/insurance"    element={<ProtectedRoute roles={['patient']}><Insurance /></ProtectedRoute>} /> */}
+      {/* <Route path="/blood-donation" element={<ProtectedRoute roles={['patient']}><BloodBanksAndDonation /></ProtectedRoute>} /> */}
       <Route path="/history"       element={<ProtectedRoute roles={['patient']}><History /></ProtectedRoute>} />
+      <Route path="/scanner"       element={<ProtectedRoute roles={['patient']}><DocumentScanner /></ProtectedRoute>} />
       <Route path="/bills"         element={<ProtectedRoute roles={['patient']}><Bills /></ProtectedRoute>} />
+      <Route path="/marketplace"   element={<ProtectedRoute roles={['patient']}><PatientMarketplace /></ProtectedRoute>} />
+
+      {/* Buyer */}
+      <Route path="/buyer/dashboard"        element={<ProtectedRoute roles={['buyer']}><BuyerDashboard /></ProtectedRoute>} />
+      <Route path="/buyer/post-requirement" element={<ProtectedRoute roles={['buyer']}><PostRequirement /></ProtectedRoute>} />
+      <Route path="/buyer/chat"             element={<ProtectedRoute roles={['buyer']}><ChatPortal /></ProtectedRoute>} />
+      <Route path="/buyer/submissions/:id"  element={<ProtectedRoute roles={['buyer']}><ViewSubmissions /></ProtectedRoute>} />
+      
+      {/* Patient Chat */}
+      <Route path="/messages"               element={<ProtectedRoute roles={['patient', 'buyer']}><ChatPortal /></ProtectedRoute>} />
 
       {/* Hospital Admin */}
-      <Route path="/hospital"                element={<ProtectedRoute roles={['hospital_admin']}><HospitalDashboard /></ProtectedRoute>} />
+      {/* <Route path="/hospital"                element={<ProtectedRoute roles={['hospital_admin']}><HospitalDashboard /></ProtectedRoute>} />
       <Route path="/hospital/appointments"   element={<ProtectedRoute roles={['hospital_admin']}><HospitalAppointments /></ProtectedRoute>} />
       <Route path="/hospital/doctors"        element={<ProtectedRoute roles={['hospital_admin']}><HospitalDoctors /></ProtectedRoute>} />
       <Route path="/hospital/staff"          element={<ProtectedRoute roles={['hospital_admin']}><HospitalStaff /></ProtectedRoute>} />
       <Route path="/hospital/reports"        element={<ProtectedRoute roles={['hospital_admin']}><HospitalReports /></ProtectedRoute>} />
       <Route path="/hospital/analytics"      element={<ProtectedRoute roles={['hospital_admin']}><HospitalAnalytics /></ProtectedRoute>} />
       <Route path="/hospital/qr"             element={<ProtectedRoute roles={['hospital_admin']}><HospitalQR /></ProtectedRoute>} />
-      <Route path="/hospital/settings"       element={<ProtectedRoute roles={['hospital_admin']}><HospitalSettings /></ProtectedRoute>} />
+      <Route path="/hospital/settings"       element={<ProtectedRoute roles={['hospital_admin']}><HospitalSettings /></ProtectedRoute>} /> */}
 
        {/* Public SMS confirm link — no auth required */}
       <Route path="/confirm-appointment/:token" element={<ConfirmAppointment />} />

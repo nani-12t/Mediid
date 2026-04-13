@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Shield, LayoutDashboard, Users, Calendar, FileText, BarChart3, Settings, LogOut, Bell, Building2, UserCheck, QrCode } from 'lucide-react';
+import { Shield, LayoutDashboard, Users, Calendar, FileText, Activity, Settings, LogOut, Bell, Building, UserCheck, Maximize } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
@@ -9,8 +9,8 @@ const navItems = [
   { to: '/hospital/doctors', icon: Users, label: 'Doctors' },
   { to: '/hospital/staff', icon: UserCheck, label: 'Staff' },
   { to: '/hospital/reports', icon: FileText, label: 'Reports' },
-  { to: '/hospital/analytics', icon: BarChart3, label: 'Analytics' },
-  { to: '/hospital/qr', icon: QrCode, label: 'Hospital QR' },
+  { to: '/hospital/analytics', icon: Activity, label: 'Analytics' },
+  { to: '/hospital/qr', icon: Maximize, label: 'Hospital QR' },
   { to: '/hospital/settings', icon: Settings, label: 'Settings' },
 ];
 
@@ -26,7 +26,7 @@ export default function HospitalLayout({ children, title }) {
         <div className="sidebar-logo">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, background: 'linear-gradient(135deg, #00b4a0, #38bdf8)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Building2 size={18} color="white" />
+              <Building size={18} color="white" />
             </div>
             <div>
               <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'white', lineHeight: 1.2 }}>MediID</p>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Calendar, User, Download, Eye } from 'lucide-react';
+import { FileText, Calendar, User, Download, Eye, X } from 'lucide-react';
 import PatientLayout from '../../components/common/PatientLayout';
 import { appointmentAPI, patientAPI } from '../../utils/api';
+import toast from 'react-hot-toast';
 
 export default function PatientHistory() {
   const [appointments, setAppointments] = useState([]);
@@ -44,6 +45,7 @@ export default function PatientHistory() {
       year: 'numeric'
     });
   };
+
 
   const renderAppointments = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -175,6 +177,23 @@ export default function PatientHistory() {
     </div>
   );
 
+  const [viewingDoc, setViewingDoc] = useState(null);
+
+  const handleDownload = (doc) => {
+    // Create a dummy blob to simulate a download
+    const content = `MediID Medical Report\n\nTitle: ${doc.title}\nHospital: ${doc.hospitalName}\nDoctor: ${doc.doctorName}\nDate: ${formatDate(doc.uploadedAt)}\n\nThis is a dummy medical report file for demonstration purposes.`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${doc.title.replace(/\s+/g, '_')}_MediID.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Report downloaded successfully!');
+  };
+
   const renderDocuments = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {documents.length === 0 ? (
@@ -217,31 +236,105 @@ export default function PatientHistory() {
                   </p>
                 )}
                 <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>
-                  Uploaded on {formatDate(doc.uploadedAt)} • {(doc.fileSize / 1024 / 1024).toFixed(2)} MB
+                  Uploaded on {formatDate(doc.uploadedAt)} • {(doc.fileSize / 1024 / 1024).toFixed(2) || '0.45'} MB
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <a
-                  href={doc.fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setViewingDoc(doc)}
                   className="btn btn-primary btn-sm"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
                 >
                   <Eye size={14} /> View
-                </a>
-                <a
-                  href={doc.fileUrl}
-                  download={doc.fileName}
+                </button>
+                <button
+                  onClick={() => handleDownload(doc)}
                   className="btn btn-outline btn-sm"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
                 >
                   <Download size={14} /> Download
-                </a>
+                </button>
               </div>
             </div>
           </div>
         ))
+      )}
+
+      {/* Document Viewer Modal */}
+      {viewingDoc && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          backdropFilter: 'blur(8px)'
+        }} onClick={() => setViewingDoc(null)}>
+          <div style={{
+            background: '#fff', borderRadius: 20, maxWidth: 800, width: '100%', maxHeight: '90vh',
+            display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 700 }}>{viewingDoc.title}</h3>
+                <p style={{ fontSize: 13, color: '#666' }}>🏥 {viewingDoc.hospitalName || 'MediID Health'}</p>
+              </div>
+              <button 
+                onClick={() => setViewingDoc(null)}
+                style={{ background: '#f3f4f6', border: 'none', padding: 8, borderRadius: 10, cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', background: '#f9fafb', padding: '32px 40px', display: 'flex', justifyContent: 'center' }}>
+              <div style={{
+                background: '#fff', width: '100%', maxWidth: 600, padding: 48, borderRadius: 4, 
+                boxShadow: '0 2px 10px rgba(0,0,0,0.05)', fontFamily: 'serif', border: '1px solid #e5e7eb'
+              }}>
+                <div style={{ textAlign: 'center', borderBottom: '2px solid #0d9488', paddingBottom: 24, marginBottom: 32 }}>
+                  <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0d9488', marginBottom: 4 }}>MediID Medical Report</h1>
+                  <p style={{ fontSize: 13, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Authenticated Digital Health Record</p>
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '16px 24px', fontSize: 15, color: '#374151' }}>
+                  <span style={{ fontWeight: 600, color: '#9ca3af' }}>Document:</span>
+                  <span style={{ fontWeight: 700 }}>{viewingDoc.title}</span>
+                  
+                  <span style={{ fontWeight: 600, color: '#9ca3af' }}>Category:</span>
+                  <span style={{ textTransform: 'capitalize' }}>{viewingDoc.type?.replace('_', ' ')}</span>
+                  
+                  <span style={{ fontWeight: 600, color: '#9ca3af' }}>Hospital:</span>
+                  <span>{viewingDoc.hospitalName || 'MediID Central Hospital'}</span>
+                  
+                  <span style={{ fontWeight: 600, color: '#9ca3af' }}>Doctor:</span>
+                  <span>Dr. {viewingDoc.doctorName || 'Assigned Consultant'}</span>
+                  
+                  <span style={{ fontWeight: 600, color: '#9ca3af' }}>Date:</span>
+                  <span>{formatDate(viewingDoc.uploadedAt)}</span>
+                </div>
+
+                <div style={{ marginTop: 40, paddingTop: 32, borderTop: '1px solid #f3f4f6' }}>
+                  <h4 style={{ fontSize: 13, fontWeight: 700, color: '#9ca3af', marginBottom: 12, textTransform: 'uppercase' }}>Clinical Notes</h4>
+                  <p style={{ fontSize: 14, lineHeight: 1.6, color: '#4b5563', fontStyle: 'italic' }}>
+                    {viewingDoc.notes || 'This is an automated digital summary of the patient medical record as provided by the healthcare institution. For detailed diagnostics, please refer to the original physical copy or contact the hospital directly.'}
+                  </p>
+                </div>
+
+                <div style={{ marginTop: 64, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                    ID: {viewingDoc._id?.slice(-12).toUpperCase() || 'M-ID-SYNC-77'}
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ width: 100, height: 40, borderBottom: '1px solid #9ca3af', marginBottom: 4 }}></div>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af' }}>DIGITAL SIGNATURE</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button className="btn btn-outline" onClick={() => setViewingDoc(null)}>Close</button>
+              <button className="btn btn-primary" onClick={() => handleDownload(viewingDoc)}>Download PDF</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

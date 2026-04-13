@@ -1,9 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, QrCode, Search, Heart, Star, ArrowRight, CheckCircle, Stethoscope, FileText, Users } from 'lucide-react';
+import { Shield, Maximize, Search, Heart, ArrowRight, Activity } from 'lucide-react';
 
 const features = [
-  { icon: QrCode, title: 'Digital Medical ID', desc: 'One QR code carries your entire medical history, accessible anywhere instantly.', color: '#00b4a0' },
+  { icon: Maximize, title: 'Digital Medical ID', desc: 'One QR code carries your entire medical history, accessible anywhere instantly.', color: '#00b4a0' },
   { icon: Shield, title: 'Secure & Consent-Based', desc: 'AES-256 encryption with full control over who sees your data.', color: '#38bdf8' },
   { icon: Search, title: 'Find Doctors & Hospitals', desc: 'Search by specialization, view ratings, and book appointments seamlessly.', color: '#8b5cf6' },
   { icon: Heart, title: 'Health Insurance', desc: 'Browse insurance plans and connect directly with agents.', color: '#f97066' },
@@ -44,7 +44,6 @@ export default function Landing() {
 
       {/* Hero */}
       <section style={{ background: 'linear-gradient(135deg, var(--navy) 0%, #1a3a5c 60%, #0e4a4a 100%)', padding: '100px 0 80px', position: 'relative', overflow: 'hidden' }}>
-        {/* Decorative circles */}
         <div style={{ position: 'absolute', top: -80, right: -80, width: 400, height: 400, borderRadius: '50%', background: 'rgba(0,180,160,0.08)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', bottom: -60, left: -60, width: 300, height: 300, borderRadius: '50%', background: 'rgba(56,189,248,0.08)', pointerEvents: 'none' }} />
 
@@ -63,16 +62,12 @@ export default function Landing() {
             <Link to="/register" className="btn btn-primary btn-lg">
               Create My Medical ID <ArrowRight size={18} />
             </Link>
-            <Link to="/register?role=hospital_admin" className="btn btn-lg btn-outline" style={{ color: 'white', borderColor: 'rgba(255,255,255,0.3)' }}>
-              Hospital Admin Login
-            </Link>
           </div>
 
-          {/* Mini QR card preview */}
           <div style={{ marginTop: 60, display: 'flex', justifyContent: 'center' }}>
             <div style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 20, padding: '20px 28px', display: 'flex', alignItems: 'center', gap: 20 }}>
               <div style={{ width: 80, height: 80, background: 'white', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <QrCode size={48} color="var(--navy)" />
+                <Maximize size={48} color="var(--navy)" />
               </div>
               <div style={{ textAlign: 'left' }}>
                 <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Medical ID</p>
@@ -140,12 +135,12 @@ export default function Landing() {
       {/* CTA */}
       <section style={{ padding: '80px 0', background: 'linear-gradient(135deg, var(--navy), #0e4a4a)' }}>
         <div className="container" style={{ textAlign: 'center' }}>
-          <Stethoscope size={40} color="var(--teal)" style={{ margin: '0 auto 16px' }} />
+          <Activity size={40} color="var(--teal)" style={{ margin: '0 auto 16px' }} />
           <h2 style={{ fontSize: 36, fontFamily: 'var(--font-display)', fontWeight: 700, color: 'white', marginBottom: 12 }}>Ready to Go Digital?</h2>
           <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 16, marginBottom: 32 }}>Join millions of patients and hospitals on MediID</p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link to="/register?role=hospital_admin" className="btn btn-lg" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}>Patient Registration</Link>
-            <Link to="/register?role=hospital_admin" className="btn btn-lg" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}>Register Hospital</Link>
+            <Link to="/register?role=patient" className="btn btn-lg" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}>Patient Registration</Link>
+            <Link to="/register?role=buyer" className="btn btn-lg" style={{ background: 'rgba(255,100,150,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}>Researcher Registration</Link>
           </div>
         </div>
       </section>

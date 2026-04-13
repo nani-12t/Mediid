@@ -1,8 +1,24 @@
 import axios from 'axios';
 
+// Ensure API URL consistently ends with /api even if configured without it in Vercel
+const getBaseURL = () => {
+  let url = process.env.REACT_APP_API_URL || 'https://backend-i4iy.vercel.app/api';
+  
+  // Strip trailing slashes and ensure /api is exactly there
+  url = url.trim().replace(/\/+$/, '');
+  
+  if (!url.toLowerCase().endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  
+  console.log('🌐 API Base URL:', url);
+  return url;
+};
+
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || '/api',
-  headers: { 'Content-Type': 'application/json' }
+  baseURL: getBaseURL(),
+  headers: { 'Content-Type': 'application/json' },
+  withCredentials: true
 });
 
 // Attach token to every request
@@ -16,10 +32,17 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   res => res,
   err => {
-    if (err.response?.status === 401) {
+    const isAuthRequest = err.config?.url?.includes('/auth/login') || err.config?.url?.includes('/auth/register');
+    
+    if (err.response?.status === 401 && !isAuthRequest) {
+      console.warn('🔑 Session expired or invalid token. Clearing storage.');
       localStorage.removeItem('mediid_token');
       localStorage.removeItem('mediid_user');
-      window.location.href = '/login';
+      
+      // Only redirect if we aren't already trying to login
+      if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(err);
   }
@@ -130,4 +153,40 @@ export const reportAPI = {
   upload: (data) => api.post('/reports/upload', data)
 };
 
-export default api;
+// OCR
+export const ocrAPI = {
+  analyze: (formData) => api.post('/ocr/analyze', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+};
+
+// Marketplace
+export const marketplaceAPI = {
+  // Buyer profile
+  getBuyerProfile:    ()       => api.get('/marketplace/buyer/profile'),
+  updateBuyerProfile: (data)   => api.put('/marketplace/buyer/profile', data),
+
+  // Requirements
+  createRequirement:  (data)   => api.post('/marketplace/requirements', data),
+  getAllRequirements:  ()       => api.get('/marketplace/requirements'),
+  getMyRequirements:  ()       => api.get('/marketplace/requirements/my'),
+  updateRequirement:  (id, d)  => api.put(`/marketplace/requirements/${id}`, d),
+  deleteRequirement:  (id)     => api.delete(`/marketplace/requirements/${id}`),
+
+  // Submissions
+  submitDocs:         (data)   => api.post('/marketplace/submissions', data),
+  submitDocuments:    (formData) => api.post('/marketplace/submissions', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getMySubmissions:   ()       => api.get('/marketplace/submissions/my'),
+  getRequirementSubs: (id)     => api.get(`/marketplace/submissions/requirement/${id}`),
+  updateSubStatus:    (id, d)  => api.put(`/marketplace/submissions/${id}/status`, d),
+
+  // Messaging
+  sendMessage:        (data)   => api.post('/marketplace/messages', data),
+  getConversations:   ()       => api.get('/marketplace/messages/conversations'),
+  getMessages:        (uid)    => api.get(`/marketplace/messages/${uid}`),
+  getUnreadCount:     ()       => api.get('/marketplace/messages/unread/count'),
+};
+
+export default api;
