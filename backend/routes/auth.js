@@ -182,21 +182,3 @@ router.get('/me', protect, async (req, res) => {
 });
 
 module.exports = router;
-══════════════════════════════════════════════════ */
-router.get('/me', protect, async (req, res) => {
-  try {
-    let profile = null;
-    if (req.user.role === 'patient') {
-      profile = await Patient.findOne({ user: req.user._id });
-    } else if (req.user.role === 'hospital_admin') {
-      profile = await Hospital.findOne({ user: req.user._id });
-    } else if (req.user.role === 'buyer') {
-      profile = await Buyer.findOne({ user: req.user._id });
-    }
-    res.json({ user: req.user, profile });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-module.exports = router;

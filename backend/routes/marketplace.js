@@ -61,6 +61,7 @@ router.get('/requirements', protect, async (req, res) => {
 router.get('/requirements/my', protect, authorize('buyer'), async (req, res) => {
   try {
     const buyer = await Buyer.findOne({ user: req.user._id });
+    if (!buyer) return res.json([]);
     const reqs = await Requirement.find({ buyer: buyer._id }).sort('-createdAt');
     res.json(reqs);
   } catch (e) { res.status(500).json({ message: e.message }); }
@@ -70,6 +71,7 @@ router.get('/requirements/my', protect, authorize('buyer'), async (req, res) => 
 router.put('/requirements/:id', protect, authorize('buyer'), async (req, res) => {
   try {
     const buyer = await Buyer.findOne({ user: req.user._id });
+    if (!buyer) return res.status(404).json({ message: 'Buyer profile not found' });
     const req_doc = await Requirement.findOneAndUpdate(
       { _id: req.params.id, buyer: buyer._id }, req.body, { new: true }
     );
@@ -82,6 +84,7 @@ router.put('/requirements/:id', protect, authorize('buyer'), async (req, res) =>
 router.delete('/requirements/:id', protect, authorize('buyer'), async (req, res) => {
   try {
     const buyer = await Buyer.findOne({ user: req.user._id });
+    if (!buyer) return res.status(404).json({ message: 'Buyer profile not found' });
     await Requirement.findOneAndDelete({ _id: req.params.id, buyer: buyer._id });
     res.json({ message: 'Requirement removed' });
   } catch (e) { res.status(500).json({ message: e.message }); }
@@ -143,6 +146,7 @@ router.get('/submissions/my', protect, authorize('patient'), async (req, res) =>
 router.get('/submissions/requirement/:id', protect, authorize('buyer'), async (req, res) => {
   try {
     const buyer = await Buyer.findOne({ user: req.user._id });
+    if (!buyer) return res.status(404).json({ message: 'Buyer profile not found' });
     const req_doc = await Requirement.findOne({ _id: req.params.id, buyer: buyer._id });
     if (!req_doc) return res.status(403).json({ message: 'Not your requirement' });
 
