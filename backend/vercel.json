@@ -1,34 +1,16 @@
 {
   "version": 2,
-  "name": "mediid-backend-v3",
   "builds": [
     {
       "src": "server.js",
       "use": "@vercel/node"
     }
   ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Credentials", "value": "true" },
-        { "key": "Access-Control-Allow-Origin", "value": "https://marketplace-frontend-one-tau.vercel.app" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
-        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization" }
-      ]
-    }
-  ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "server.js"
-    },
-    {
       "src": "/(.*)",
-      "dest": "server.js"
+      "dest": "server.js",
+      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }

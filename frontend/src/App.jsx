@@ -18,7 +18,6 @@ import DocumentScanner from './pages/patient/DocumentScanner';
 import Bills from './pages/patient/Bills';
 // import ConfirmAppointment from './pages/patient/ConfirmAppointment';
 import PatientMarketplace from './pages/patient/Marketplace';
-import PatientSubmissions from './pages/patient/Submissions';
 
 import ChatPortal from './pages/common/ChatPortal';
 
@@ -72,7 +71,6 @@ function AppRoutes() {
       <Route path="/scanner"       element={<ProtectedRoute roles={['patient']}><DocumentScanner /></ProtectedRoute>} />
       <Route path="/bills"         element={<ProtectedRoute roles={['patient']}><Bills /></ProtectedRoute>} />
       <Route path="/marketplace"   element={<ProtectedRoute roles={['patient']}><PatientMarketplace /></ProtectedRoute>} />
-      <Route path="/submissions"   element={<ProtectedRoute roles={['patient']}><PatientSubmissions /></ProtectedRoute>} />
 
       {/* Buyer */}
       <Route path="/buyer/dashboard"        element={<ProtectedRoute roles={['buyer']}><BuyerDashboard /></ProtectedRoute>} />

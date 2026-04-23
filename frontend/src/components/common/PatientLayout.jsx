@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Shield, Home, Users, Calendar, Search, CreditCard, LogOut, Menu, X, Bell, FileText, Maximize, Database, MessageSquare, Archive } from 'lucide-react';
+import { Shield, Home, Users, Calendar, Search, CreditCard, LogOut, Menu, X, Bell, FileText, Maximize, Database, MessageSquare } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
   { to: '/dashboard', icon: Home, label: 'Dashboard' },
   { to: '/marketplace', icon: Database, label: 'Data Marketplace' },
-  { to: '/submissions', icon: Archive, label: 'My Submissions' },
   { to: '/history', icon: FileText, label: 'Medical History' },
   { to: '/scanner', icon: Maximize, label: 'Scan (OCR)' },
   { to: '/profile', icon: Users, label: 'My Profile' },
