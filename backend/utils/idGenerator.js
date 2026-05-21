@@ -4,10 +4,13 @@
  * ID Format Rules:
  *  Patient:  MID-XXXXXXXX          (MID = Medical ID)
  *  Hospital: HID-XXXXXXXX          (HID = Hospital ID)
- *  Doctor:   HID-XXXXXXXX-DOC-XXXX (Hospital ID prefix + DOC + sequential)
- *  Staff:    HID-XXXXXXXX-STF-XXXX (Hospital ID prefix + STF + sequential)
- *
- * This ensures every doctor/staff ID is traceable back to its hospital.
+ *  
+ * Hierarchy:
+ *  Senior Doctor:  HID-XXXXXXXX-SRDOC-XXXX
+ *  Junior Doctor:  HID-XXXXXXXX-JRDOC-XXXX
+ *  Nurse:          HID-XXXXXXXX-NUR-XXXX
+ *  Lab Technician: HID-XXXXXXXX-LAB-XXXX
+ *  Pharmacist:     HID-XXXXXXXX-PHR-XXXX
  */
 
 const QRCode = require('qrcode');
@@ -15,55 +18,49 @@ const crypto = require('crypto');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Generate a random uppercase alphanumeric string of given length */
 const randomCode = (len = 8) =>
   crypto.randomBytes(len).toString('hex').slice(0, len).toUpperCase();
 
-/** Zero-pad a number: 1 → "0001" */
 const pad = (n, size = 4) => String(n).padStart(size, '0');
 
 // ─── ID Generators ──────────────────────────────────────────────────────────
 
-/**
- * Generate a unique Patient Medical ID
- * Format: MID-A3F2C1B9
- */
 const generatePatientUID = () => `MID-${randomCode(8)}`;
-
-/**
- * Generate a unique Hospital ID
- * Format: HID-C4E1A2B3
- */
 const generateHospitalUID = () => `HID-${randomCode(8)}`;
 
 /**
- * Generate a Doctor ID tied to a hospital
- * Format: HID-C4E1A2B3-DOC-0001
- * @param {string} hospitalUID  - The hospital's UID e.g. "HID-C4E1A2B3"
- * @param {number} sequence     - Sequential number of doctor in this hospital
+ * Generate a hierarchical ID tied to a hospital
+ * @param {string} hospitalUID - e.g. "HID-C4E1A2B3"
+ * @param {string} roleCode    - e.g. "SRDOC", "JRDOC", "NUR", "LAB", "PHR"
+ * @param {number} sequence    - Sequential number
  */
-const generateDoctorUID = (hospitalUID, sequence) =>
-  `${hospitalUID}-DOC-${pad(sequence)}`;
+const generateHierarchicalUID = (hospitalUID, roleCode, sequence) => 
+  `${hospitalUID}-${roleCode}-${pad(sequence)}`;
 
-/**
- * Generate a Staff ID tied to a hospital
- * Format: HID-C4E1A2B3-STF-0001
- * @param {string} hospitalUID  - The hospital's UID e.g. "HID-C4E1A2B3"
- * @param {number} sequence     - Sequential number of staff in this hospital
- */
-const generateStaffUID = (hospitalUID, sequence) =>
-  `${hospitalUID}-STF-${pad(sequence)}`;
+// Backward compatibility or specialized helpers
+const generateDoctorUID = (hospitalUID, sequence, type = 'SRDOC') => {
+  const tStr = String(type || 'SRDOC');
+  const roleCode = tStr.includes('Senior') ? 'SRDOC' : 'JRDOC';
+  return generateHierarchicalUID(hospitalUID, roleCode, sequence);
+};
+
+const generateStaffUID = (hospitalUID, sequence, role = 'nurse') => {
+  const roleMap = {
+    nurse: 'NUR',
+    lab_technician: 'LAB',
+    pharmacist: 'PHR',
+    receptionist: 'REC',
+    radiologist: 'RAD',
+    administrator: 'ADM'
+  };
+  const roleCode = roleMap[role] || 'STF';
+  return generateHierarchicalUID(hospitalUID, roleCode, sequence);
+};
 
 // ─── QR Code Generator ──────────────────────────────────────────────────────
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 
-/**
- * Generate a QR code as a base64 data URL
- * @param {object} payload  - Data to encode in QR
- * @param {string} type     - 'patient' | 'hospital' | 'doctor' | 'staff'
- * @returns {Promise<string>} base64 PNG data URL
- */
 const generateQRCode = async (payload, type = 'entity') => {
   const qrPayload = {
     ...payload,
@@ -87,7 +84,7 @@ const generateQRCode = async (payload, type = 'entity') => {
   });
 };
 
-// ─── Combined: generate UID + QR in one call ────────────────────────────────
+// ─── Combined: generate UID + QR ────────────────────────────────────────────
 
 const generatePatientIDAndQR = async (extraData = {}) => {
   const uid = generatePatientUID();
@@ -95,20 +92,30 @@ const generatePatientIDAndQR = async (extraData = {}) => {
   return { uid, qrCode };
 };
 
-const generateHospitalIDAndQR = async (extraData = {}) => {
-  const uid = generateHospitalUID();
-  const qrCode = await generateQRCode({ uid, ...extraData }, 'hospital');
+const generateHospitalIDAndQR = async (registrationNumberOrExtraData = {}, extraData = {}) => {
+  let reg = '';
+  let finalExtra = {};
+  if (typeof registrationNumberOrExtraData === 'string') {
+    reg = registrationNumberOrExtraData;
+    finalExtra = extraData;
+  } else {
+    finalExtra = registrationNumberOrExtraData || {};
+    reg = finalExtra.registrationNumber || '';
+  }
+  const cleanReg = reg ? String(reg).trim().toUpperCase().replace(/[^A-Z0-9]/g, '') : randomCode(8);
+  const uid = `HID-${cleanReg}`;
+  const qrCode = await generateQRCode({ uid, ...finalExtra }, 'hospital');
   return { uid, qrCode };
 };
 
-const generateDoctorIDAndQR = async (hospitalUID, sequence, extraData = {}) => {
-  const uid = generateDoctorUID(hospitalUID, sequence);
+const generateDoctorIDAndQR = async (hospitalUID, sequence, doctorType, extraData = {}) => {
+  const uid = generateDoctorUID(hospitalUID, sequence, doctorType);
   const qrCode = await generateQRCode({ uid, hospitalUID, ...extraData }, 'doctor');
   return { uid, qrCode };
 };
 
-const generateStaffIDAndQR = async (hospitalUID, sequence, extraData = {}) => {
-  const uid = generateStaffUID(hospitalUID, sequence);
+const generateStaffIDAndQR = async (hospitalUID, sequence, role, extraData = {}) => {
+  const uid = generateStaffUID(hospitalUID, sequence, role);
   const qrCode = await generateQRCode({ uid, hospitalUID, ...extraData }, 'staff');
   return { uid, qrCode };
 };
@@ -118,6 +125,7 @@ module.exports = {
   generateHospitalUID,
   generateDoctorUID,
   generateStaffUID,
+  generateHierarchicalUID,
   generateQRCode,
   generatePatientIDAndQR,
   generateHospitalIDAndQR,

@@ -166,6 +166,7 @@ export default function PatientProfile() {
   const [docUploading, setDocUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [docFilter, setDocFilter] = useState('all');
+  const [previewDoc, setPreviewDoc] = useState(null);
   const fileRef = useRef(null);
 
   const [docForm, setDocForm] = useState(EMPTY_DOC);
@@ -263,21 +264,42 @@ export default function PatientProfile() {
     if (!docForm.title.trim()) return;
     setDocUploading(true);
     try {
-      // If you add a real upload endpoint later, upload docForm.file here first
+      let fileUrl = docForm.fileUrl.trim();
+      let fileName = docForm.fileName;
+      let fileSize = 0;
+
+      if (docForm.file) {
+        fileName = docForm.file.name;
+        fileSize = docForm.file.size;
+        
+        // Read file as base64 data URL
+        const reader = new FileReader();
+        const base64Promise = new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = (error) => reject(error);
+        });
+        reader.readAsDataURL(docForm.file);
+        fileUrl = await base64Promise;
+      }
+
       await patientAPI.addDocument({
         type:         docForm.type,
         title:        docForm.title.trim(),
         hospitalName: docForm.hospitalName.trim(),
         doctorName:   docForm.doctorName.trim(),
-        fileUrl:      docForm.fileUrl.trim(),
-        fileName:     docForm.fileName,
+        fileUrl:      fileUrl,
+        fileName:     fileName,
+        fileSize:     fileSize,
         notes:        docForm.notes.trim(),
       });
       const { data } = await patientAPI.getProfile();
       setPatient(data);
       closeDocModal();
-      toast.success('Document added!');
-    } catch { toast.error('Failed to add document'); }
+      toast.success('Document added to DigiLocker!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to add document');
+    }
     setDocUploading(false);
   };
 
@@ -503,7 +525,7 @@ export default function PatientProfile() {
                 <div key={doc._id} className="card" style={{ position: 'relative' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                     <div style={{ fontSize: 28, flexShrink: 0 }}>{docTypeEmojis[doc.type] || '📄'}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setPreviewDoc(doc)}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
                         <p style={{ fontSize: 14, fontWeight: 600, wordBreak: 'break-word' }}>{doc.title}</p>
                         <span className={`badge ${docTypeColors[doc.type]}`} style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
@@ -938,6 +960,76 @@ export default function PatientProfile() {
               <button onClick={addBenefit} disabled={!benefitForm.schemeName}
                 style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: benefitForm.schemeName ? 'var(--teal)' : '#a7f3d0', fontSize: 14, fontWeight: 600, color: '#fff', cursor: benefitForm.schemeName ? 'pointer' : 'not-allowed' }}>
                 + Add Benefit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════
+          Document Preview Modal
+      ═══════════════════════════════════════ */}
+      {previewDoc && (
+        <div style={modalOverlay} onClick={e => { if (e.target === e.currentTarget) setPreviewDoc(null); }}>
+          <div style={{ ...modalBox, maxWidth: 640 }}>
+            <div style={modalHeader}>
+              <div>
+                <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', marginBottom: 3 }}>{previewDoc.title}</h2>
+                <span className={`badge ${docTypeColors[previewDoc.type]}`} style={{ fontSize: 11 }}>
+                  {previewDoc.type?.replace('_', ' ')}
+                </span>
+              </div>
+              <button style={closeBtn} onClick={() => setPreviewDoc(null)}>
+                <X size={15} /> Close
+              </button>
+            </div>
+            
+            <div style={{ ...modalBody, padding: '20px 24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 13, background: 'var(--gray-50)', padding: 12, borderRadius: 10 }}>
+                {previewDoc.hospitalName && <div><span style={{color: 'var(--gray-400)'}}>Hospital:</span> <strong>{previewDoc.hospitalName}</strong></div>}
+                {previewDoc.doctorName && <div><span style={{color: 'var(--gray-400)'}}>Doctor:</span> <strong>{previewDoc.doctorName}</strong></div>}
+                <div><span style={{color: 'var(--gray-400)'}}>Uploaded:</span> <strong>{new Date(previewDoc.uploadedAt).toLocaleDateString('en-IN')}</strong></div>
+                {previewDoc.fileName && <div><span style={{color: 'var(--gray-400)'}}>File Name:</span> <strong>{previewDoc.fileName}</strong></div>}
+              </div>
+
+              {previewDoc.notes && (
+                <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: 12, borderRadius: 10, fontSize: 13, color: '#92400e' }}>
+                  <strong>Notes / Prescription details:</strong>
+                  <p style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{previewDoc.notes}</p>
+                </div>
+              )}
+
+              {previewDoc.fileUrl ? (
+                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid #f3f4f6', borderRadius: 12, padding: 10, minHeight: 200, background: '#fafafa' }}>
+                  {previewDoc.fileUrl.startsWith('data:image/') || previewDoc.fileUrl.match(/\.(jpeg|jpg|gif|png)$/i) ? (
+                    <img src={previewDoc.fileUrl} alt="Medical Document" style={{ maxWidth: '100%', maxHeight: 400, borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }} />
+                  ) : previewDoc.fileUrl.startsWith('data:application/pdf') ? (
+                    <object data={previewDoc.fileUrl} type="application/pdf" width="100%" height="400px" style={{ borderRadius: 8 }}>
+                      <iframe src={previewDoc.fileUrl} width="100%" height="400px" style={{ border: 'none' }}>
+                        <p>This browser does not support PDF view. <a href={previewDoc.fileUrl} download={previewDoc.fileName || "document.pdf"} style={{ color: 'var(--teal)', fontWeight: 600 }}>Download PDF</a></p>
+                      </iframe>
+                    </object>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: 20 }}>
+                      <FileText size={48} color="var(--gray-400)" style={{ margin: '0 auto 10px' }} />
+                      <p style={{ fontSize: 14, color: 'var(--gray-600)', marginBottom: 12 }}>Attachment: {previewDoc.fileName || 'View Document'}</p>
+                      <a href={previewDoc.fileUrl} download={previewDoc.fileName || 'document'} className="btn btn-primary" style={{ display: 'inline-block', textDecoration: 'none' }}>
+                        Download / View Document
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--gray-400)' }}>
+                  <FileText size={48} style={{ margin: '0 auto 10px', opacity: 0.5 }} />
+                  <p>No file attachment. Document consists of notes only.</p>
+                </div>
+              )}
+            </div>
+
+            <div style={modalFooter}>
+              <button onClick={() => setPreviewDoc(null)} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #e5e7eb', background: '#fff', fontSize: 14, fontWeight: 500, color: '#374151', cursor: 'pointer' }}>
+                Close Preview
               </button>
             </div>
           </div>

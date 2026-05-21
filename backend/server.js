@@ -17,19 +17,27 @@ const allowedOrigins = [
   (process.env.CLIENT_URL || 'https://frontend-dun-five-15.vercel.app').replace(/\/$/, ''),
   'https://frontend-dun-five-15.vercel.app',
   'http://localhost:3000',
-  'http://127.0.0.1:3000'
+  'http://127.0.0.1:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001'
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
+    const normalizedOrigin = (origin || '').toLowerCase().replace(/\/$/, '');
+
     // 1. Allow internal requests (no origin)
     if (!origin) return callback(null, true);
 
     // 2. Allow any Vercel subdomain
     if (origin.endsWith('.vercel.app')) return callback(null, true);
 
-    // 3. Allow explicitly listed origins (local + production)
-    const normalizedOrigin = (origin || '').toLowerCase().replace(/\/$/, '');
+    // 3. Allow any localhost/127.0.0.1 for development
+    if (normalizedOrigin.includes('localhost') || normalizedOrigin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+
+    // 4. Allow explicitly listed origins (production)
     const isAllowed = allowedOrigins.some(ao => ao.toLowerCase().replace(/\/$/, '') === normalizedOrigin);
     
     if (isAllowed) {
@@ -60,7 +68,12 @@ app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/insurance', require('./routes/insurance'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/ocr', require('./routes/ocr'));
+app.use('/api/hospital-admin', require('./routes/hospitalAdmin'));
+app.use('/api/doctor-portal',   require('./routes/doctorPortal'));
+app.use('/api/pharmacy-portal', require('./routes/pharmacyPortal'));
 app.use('/api/marketplace', require('./routes/marketplace'));
+app.use('/api/blood-requests', require('./routes/bloodRequests'));
+app.use('/api/medicine-orders', require('./routes/medicineOrders'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'MediID API running', timestamp: new Date() }));
 
@@ -81,7 +94,6 @@ const User = require('./models/User');
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 MediID Server running on port ${PORT}`);
-  console.log(`📋 ID Format: Patient=MID-XXXXXXXX | Hospital=HID-XXXXXXXX | Doctor=HID-XXXX-DOC-0001 | Staff=HID-XXXX-STF-0001`);
 });
 
 module.exports = app;

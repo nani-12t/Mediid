@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 
 const ROLES = [
   { value: 'patient', label: 'Patient', icon: '🧑‍⚕️', desc: 'Manage your medical records' },
-  { value: 'buyer', label: 'Researcher / Buyer', icon: '🔬', desc: 'Post data requirements for research' },
+  { value: 'hospital_admin', label: 'Hospital Admin', icon: '🏥', desc: 'Manage hospital settings, appointments, and doctors' },
 ];
 
 export default function Register() {
@@ -15,19 +15,24 @@ export default function Register() {
 
   const [searchParams] = useSearchParams();
   const initialRole = searchParams.get('role') || 'patient';
-  
-  const [role, setRole]       = useState(initialRole);
+
+  const [role, setRole] = useState(initialRole);
   const [showPwd, setShowPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const [error, setError] = useState('');
 
   const [form, setForm] = useState({
-    firstName:   '',
-    lastName:    '',
-    email:       '',
-    password:    '',
+    firstName: '',
+    lastName: '',
+    hospitalName: '',
+    registrationNumber: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    securityCode: '',
     companyName: '',
-    website:     '',
+    website: '',
     description: '',
   });
 
@@ -36,13 +41,23 @@ export default function Register() {
   const validate = () => {
     if (role === 'patient') {
       if (!form.firstName.trim()) return 'First name is required.';
-      if (!form.lastName.trim())  return 'Last name is required.';
+      if (!form.lastName.trim()) return 'Last name is required.';
+    }
+    if (role === 'hospital_admin') {
+      if (!form.hospitalName.trim()) return 'Hospital name is required.';
+      if (!form.registrationNumber.trim()) return 'Government registration number is required.';
+      // Security code validation (commented out for now as requested)
+      /*
+      if (!form.securityCode.trim()) return 'Security code is required.';
+      if (form.securityCode.trim() !== 'MEDIID-SECURE-2026') return 'Invalid security code.';
+      */
     }
     if (role === 'buyer' && !form.companyName.trim())
       return 'Company / Organization name is required.';
-    if (!form.email.trim())       return 'Email address is required.';
+    if (!form.email.trim()) return 'Email address is required.';
     if (!/\S+@\S+\.\S+/.test(form.email)) return 'Please enter a valid email address.';
     if (form.password.length < 6) return 'Password must be at least 6 characters.';
+    if (form.password !== form.confirmPassword) return 'Passwords do not match.';
     return null;
   };
 
@@ -58,21 +73,25 @@ export default function Register() {
 
       if (role === 'patient') {
         payload.firstName = form.firstName.trim();
-        payload.lastName  = form.lastName.trim();
+        payload.lastName = form.lastName.trim();
+      } else if (role === 'hospital_admin') {
+        payload.hospitalName = form.hospitalName.trim();
+        payload.registrationNumber = form.registrationNumber.trim();
+        // payload.securityCode = form.securityCode.trim(); // Commented out for now
       } else if (role === 'buyer') {
-        payload.companyName  = form.companyName.trim();
-        payload.website      = form.website.trim();
-        payload.description  = form.description.trim();
-        payload.firstName    = form.firstName.trim() || form.companyName.trim();
-        payload.lastName     = form.lastName.trim()  || 'Researcher';
+        payload.companyName = form.companyName.trim();
+        payload.website = form.website.trim();
+        payload.description = form.description.trim();
+        payload.firstName = form.firstName.trim() || form.companyName.trim();
+        payload.lastName = form.lastName.trim() || 'Researcher';
       }
 
       const data = await register(payload);
       toast.success('Account created! Welcome to MediID 🎉');
-      
-      if (data.user.role === 'buyer')         navigate('/buyer/dashboard');
+
+      if (data.user.role === 'buyer') navigate('/buyer/dashboard');
       else if (data.user.role === 'hospital_admin') navigate('/hospital');
-      else                                    navigate('/dashboard');
+      else navigate('/dashboard');
     } catch (err) {
       const backendErrors = err.response?.data?.errors;
       if (backendErrors?.length) {
@@ -137,7 +156,7 @@ export default function Register() {
 
           {/* Role description */}
           <div style={{ background: '#f0faf8', border: '1px solid #b2e8e0', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#15635a' }}>
-            {ROLES.find(r => r.value === role)?.desc}
+            {ROLES.find(r => r.value === role)?.desc || 'Create a secure MediID account'}
           </div>
 
           {error && (
@@ -161,6 +180,27 @@ export default function Register() {
                   <input style={inp} placeholder="Sharma" value={form.lastName} onChange={e => set('lastName', e.target.value)} />
                 </div>
               </div>
+            )}
+
+            {/* Hospital Admin fields */}
+            {role === 'hospital_admin' && (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={lbl}>Hospital Name <span style={{ color: '#e53e3e' }}>*</span></label>
+                  <input style={inp} placeholder="e.g. Apollo Chennai" value={form.hospitalName} onChange={e => set('hospitalName', e.target.value)} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={lbl}>Government Registration Number <span style={{ color: '#e53e3e' }}>*</span></label>
+                  <input style={inp} placeholder="e.g. GOV-AIIMS-456" value={form.registrationNumber} onChange={e => set('registrationNumber', e.target.value)} />
+                </div>
+                {/* Security Code - Commented out for now as requested */}
+                {/*
+                <div style={{ marginBottom: 14 }}>
+                  <label style={lbl}>Security Code <span style={{ color: '#e53e3e' }}>*</span></label>
+                  <input style={inp} type="text" placeholder="Enter given Security Code" value={form.securityCode} onChange={e => set('securityCode', e.target.value)} />
+                </div>
+                */}
+              </>
             )}
 
             {/* Buyer fields */}
@@ -199,7 +239,7 @@ export default function Register() {
             </div>
 
             {/* Password */}
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 14 }}>
               <label style={lbl}>Password <span style={{ color: '#e53e3e' }}>*</span></label>
               <div style={{ position: 'relative' }}>
                 <input
@@ -217,12 +257,31 @@ export default function Register() {
               </div>
             </div>
 
+            {/* Confirm Password */}
+            <div style={{ marginBottom: 24 }}>
+              <label style={lbl}>Confirm Password <span style={{ color: '#e53e3e' }}>*</span></label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  style={{ ...inp, paddingRight: 44 }}
+                  type={showConfirmPwd ? 'text' : 'password'}
+                  placeholder="Confirm your password"
+                  value={form.confirmPassword}
+                  onChange={e => set('confirmPassword', e.target.value)}
+                  autoComplete="new-password"
+                />
+                <button type="button" onClick={() => setShowConfirmPwd(v => !v)}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 2 }}>
+                  {showConfirmPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
             <button type="submit" disabled={loading}
               style={{ width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: loading ? '#a7f3d0' : 'var(--teal)', color: '#fff', fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               {loading ? (
                 <><div className="spinner" style={{ width: 18, height: 18, borderTopColor: 'white' }} /> Creating account...</>
               ) : (
-                role === 'buyer' ? '🔬 Create Researcher Account' : '🧑‍⚕️ Create Patient Account'
+                role === 'hospital_admin' ? '🔬 Create Hospital Account' : '🧑‍⚕️ Create Patient Account'
               )}
             </button>
           </form>

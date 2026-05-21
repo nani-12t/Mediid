@@ -6,8 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 const navItems = [
   { to: '/hospital', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/hospital/appointments', icon: Calendar, label: 'Appointments' },
-  { to: '/hospital/doctors', icon: Users, label: 'Doctors' },
-  { to: '/hospital/staff', icon: UserCheck, label: 'Staff' },
+  { to: '/hospital/management', icon: Users, label: 'Management' },
   { to: '/hospital/reports', icon: FileText, label: 'Reports' },
   { to: '/hospital/analytics', icon: Activity, label: 'Analytics' },
   { to: '/hospital/qr', icon: Maximize, label: 'Hospital QR' },

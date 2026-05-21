@@ -2,12 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { QrCode, Download, Building2, Users, UserCheck } from 'lucide-react';
 import HospitalLayout from '../../components/common/HospitalLayout';
 import { useAuth } from '../../context/AuthContext';
-import axios from 'axios';
+import api from '../../utils/api';
 
 const STAFF_ROLES = ['nurse','receptionist','lab_technician','pharmacist','ward_boy','security','administrator','radiologist','physiotherapist','other'];
-
-const api = axios.create({ baseURL: '/api' });
-api.interceptors.request.use(c => { const t = localStorage.getItem('mediid_token'); if(t) c.headers.Authorization=`Bearer ${t}`; return c; });
 
 export default function HospitalQR() {
   const { profile } = useAuth();

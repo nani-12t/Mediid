@@ -52,7 +52,9 @@ api.interceptors.response.use(
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
-  me: () => api.get('/auth/me')
+  me: () => api.get('/auth/me'),
+  forgotPassword: (data) => api.post('/auth/forgot-password', data),
+  resetPassword: (data) => api.post('/auth/reset-password', data)
 };
 
 // Patient
@@ -67,7 +69,11 @@ export const patientAPI = {
   deleteMedicalBenefit: (id) => api.delete(`/patients/medical-benefits/${id}`),
   // Legacy
   addGovernmentBenefit: (data) => api.post('/patients/government-benefits', data),
-  scanUID: (uid) => api.get(`/patients/scan/${uid}`)
+  scanUID: (uid) => api.get(`/patients/scan/${uid}`),
+  // Bills & Expenses
+  getBills: () => api.get('/patients/bills'),
+  addCustomBill: (data) => api.post('/patients/bills', data),
+  payBill: (billId, data) => api.put(`/patients/bills/${billId}/pay`, data)
 };
 
 // Hospital
@@ -140,7 +146,8 @@ export const appointmentAPI = {
   getHospitalAppointments: (params) => api.get('/appointments/hospital', { params }),
   getPendingCount: () => api.get('/appointments/hospital/count'),
   updateStatus: (id, data) => api.put(`/appointments/${id}/status`, data),
-  cancel: (id) => api.delete(`/appointments/${id}`)
+  cancel: (id) => api.delete(`/appointments/${id}`),
+  pay: (id) => api.put(`/appointments/${id}/pay`)
 };
 
 // Insurance
@@ -150,7 +157,8 @@ export const insuranceAPI = {
 
 // Reports
 export const reportAPI = {
-  upload: (data) => api.post('/reports/upload', data)
+  upload: (data) => api.post('/reports/upload', data),
+  getHospitalReports: () => api.get('/reports/hospital')
 };
 
 // OCR
@@ -187,6 +195,18 @@ export const marketplaceAPI = {
   getConversations:   ()       => api.get('/marketplace/messages/conversations'),
   getMessages:        (uid)    => api.get(`/marketplace/messages/${uid}`),
   getUnreadCount:     ()       => api.get('/marketplace/messages/unread/count'),
+};
+
+// Blood Requests API
+export const bloodRequestAPI = {
+  create: (data) => api.post('/blood-requests', data),
+  getMyRequests: () => api.get('/blood-requests/my'),
+};
+
+// Medicine Orders API
+export const medicineOrderAPI = {
+  create: (data) => api.post('/medicine-orders', data),
+  getMyOrders: () => api.get('/medicine-orders/my'),
 };
 
 export default api;

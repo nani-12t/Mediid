@@ -6,6 +6,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Landing from './pages/Landing';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
+import DoctorActivation from './pages/auth/DoctorActivation';
+import ForgotPassword from './pages/auth/ForgotPassword';
 
 import PatientDashboard from './pages/patient/Dashboard';
 import PatientProfile from './pages/patient/Profile';
@@ -18,6 +20,10 @@ import DocumentScanner from './pages/patient/DocumentScanner';
 import Bills from './pages/patient/Bills';
 import ConfirmAppointment from './pages/patient/ConfirmAppointment';
 import PatientMarketplace from './pages/patient/Marketplace';
+import VideoConsult from './pages/patient/VideoConsult';
+import LabTests from './pages/patient/LabTests';
+import DoctorBooking from './pages/patient/DoctorBooking';
+import Medicines from './pages/patient/Medicines';
 
 import ChatPortal from './pages/common/ChatPortal';
 
@@ -26,10 +32,12 @@ import PostRequirement from './pages/buyer/PostRequirement';
 import ViewSubmissions from './pages/buyer/ViewSubmissions';
 
 import HospitalDashboard from './pages/hospital/Dashboard';
-import HospitalDoctors from './pages/hospital/Doctors';
-import HospitalStaff from './pages/hospital/Staff';
+import HospitalManagement from './pages/hospital/Management';
 import HospitalAppointments from './pages/hospital/Appointments';
 import HospitalReports from './pages/hospital/Reports';
+
+import DoctorDashboard from './pages/doctor/Dashboard';
+import PharmacyDashboard from './pages/pharmacy/Dashboard';
 import HospitalAnalytics from './pages/hospital/Analytics';
 import HospitalSettings from './pages/hospital/Settings';
 import HospitalQR from './pages/hospital/HospitalQR';
@@ -59,6 +67,8 @@ function AppRoutes() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+      <Route path="/doctor-activate" element={<DoctorActivation />} />
+      <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
 
       {/* Patient */}
       <Route path="/dashboard"    element={<ProtectedRoute roles={['patient']}><PatientDashboard /></ProtectedRoute>} />
@@ -71,6 +81,10 @@ function AppRoutes() {
       <Route path="/scanner"       element={<ProtectedRoute roles={['patient']}><DocumentScanner /></ProtectedRoute>} />
       <Route path="/bills"         element={<ProtectedRoute roles={['patient']}><Bills /></ProtectedRoute>} />
       <Route path="/marketplace"   element={<ProtectedRoute roles={['patient']}><PatientMarketplace /></ProtectedRoute>} />
+      <Route path="/video-consult" element={<ProtectedRoute roles={['patient']}><VideoConsult /></ProtectedRoute>} />
+      <Route path="/lab-tests"     element={<ProtectedRoute roles={['patient']}><LabTests /></ProtectedRoute>} />
+      <Route path="/doctor/:id"    element={<ProtectedRoute roles={['patient']}><DoctorBooking /></ProtectedRoute>} />
+      <Route path="/medicines"     element={<ProtectedRoute roles={['patient']}><Medicines /></ProtectedRoute>} />
 
       {/* Buyer */}
       <Route path="/buyer/dashboard"        element={<ProtectedRoute roles={['buyer']}><BuyerDashboard /></ProtectedRoute>} />
@@ -82,14 +96,19 @@ function AppRoutes() {
       <Route path="/messages"               element={<ProtectedRoute roles={['patient', 'buyer']}><ChatPortal /></ProtectedRoute>} />
 
       {/* Hospital Admin */}
-      {/* <Route path="/hospital"                element={<ProtectedRoute roles={['hospital_admin']}><HospitalDashboard /></ProtectedRoute>} />
+      <Route path="/hospital"                element={<ProtectedRoute roles={['hospital_admin']}><HospitalDashboard /></ProtectedRoute>} />
       <Route path="/hospital/appointments"   element={<ProtectedRoute roles={['hospital_admin']}><HospitalAppointments /></ProtectedRoute>} />
-      <Route path="/hospital/doctors"        element={<ProtectedRoute roles={['hospital_admin']}><HospitalDoctors /></ProtectedRoute>} />
-      <Route path="/hospital/staff"          element={<ProtectedRoute roles={['hospital_admin']}><HospitalStaff /></ProtectedRoute>} />
+      <Route path="/hospital/management"     element={<ProtectedRoute roles={['hospital_admin']}><HospitalManagement /></ProtectedRoute>} />
       <Route path="/hospital/reports"        element={<ProtectedRoute roles={['hospital_admin']}><HospitalReports /></ProtectedRoute>} />
       <Route path="/hospital/analytics"      element={<ProtectedRoute roles={['hospital_admin']}><HospitalAnalytics /></ProtectedRoute>} />
       <Route path="/hospital/qr"             element={<ProtectedRoute roles={['hospital_admin']}><HospitalQR /></ProtectedRoute>} />
-      <Route path="/hospital/settings"       element={<ProtectedRoute roles={['hospital_admin']}><HospitalSettings /></ProtectedRoute>} /> */}
+      <Route path="/hospital/settings"       element={<ProtectedRoute roles={['hospital_admin']}><HospitalSettings /></ProtectedRoute>} />
+
+      {/* Doctor Portal */}
+      <Route path="/doctor" element={<ProtectedRoute roles={['doctor', 'hospital_admin']}><DoctorDashboard /></ProtectedRoute>} />
+
+      {/* Pharmacy Portal */}
+      <Route path="/pharmacy" element={<ProtectedRoute roles={['pharmacy', 'hospital_admin']}><PharmacyDashboard /></ProtectedRoute>} />
 
        {/* Public SMS confirm link — no auth required */}
       <Route path="/confirm-appointment/:token" element={<ConfirmAppointment />} />

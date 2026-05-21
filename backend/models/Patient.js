@@ -66,6 +66,20 @@ const medicalDocumentSchema = new mongoose.Schema({
   notes: String,
 });
 
+const billSchema = new mongoose.Schema({
+  billId:           { type: String, required: true },
+  title:            { type: String, required: true },
+  category:         { type: String, required: true },
+  hospitalName:     String,
+  doctorName:       String,
+  amount:           { type: Number, required: true },
+  status:           { type: String, enum: ['pending', 'paid'], default: 'pending' },
+  date:             { type: Date, default: Date.now },
+  dueDate:          Date,
+  paidAt:           Date,
+  paymentMethod:    String,
+});
+
 const patientSchema = new mongoose.Schema({
   user:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   uid:     { type: String, unique: true, default: generatePatientUID },
@@ -100,6 +114,7 @@ const patientSchema = new mongoose.Schema({
   }],
 
   documents:        [medicalDocumentSchema],
+  bills:            [billSchema],
 
   // Unified medical benefits (govt + employer + personal)
   medicalBenefits:  [medicalBenefitSchema],

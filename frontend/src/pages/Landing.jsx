@@ -140,7 +140,7 @@ export default function Landing() {
           <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 16, marginBottom: 32 }}>Join millions of patients and hospitals on MediID</p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link to="/register?role=patient" className="btn btn-lg" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}>Patient Registration</Link>
-            <Link to="/register?role=buyer" className="btn btn-lg" style={{ background: 'rgba(255,100,150,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}>Researcher Registration</Link>
+            <Link to="/register?role=hospital_admin" className="btn btn-lg" style={{ background: 'rgba(56,189,248,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}>Hospital Admin Registration</Link>
           </div>
         </div>
       </section>

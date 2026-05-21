@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Droplet, Heart, Search, MapPin, Phone, Clock, User, CheckCircle, AlertCircle, Plus, Users } from 'lucide-react';
 import PatientLayout from '../../components/common/PatientLayout';
 import toast from 'react-hot-toast';
+import { bloodRequestAPI } from '../../utils/api';
 
 // Mock data for blood banks (in a real app, this would come from an API)
 const bloodBanks = [
@@ -68,6 +69,26 @@ export default function BloodBanksAndDonation() {
   const [selectedBloodGroup, setSelectedBloodGroup] = useState('');
   const [bloodBanksData, setBloodBanksData] = useState(bloodBanks);
   const [loading, setLoading] = useState(false);
+  const [myRequests, setMyRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+
+  const fetchMyRequests = async () => {
+    try {
+      setLoadingRequests(true);
+      const res = await bloodRequestAPI.getMyRequests();
+      setMyRequests(res.data);
+    } catch (error) {
+      console.error('Error fetching blood requests:', error);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'blood') {
+      fetchMyRequests();
+    }
+  }, [activeTab]);
 
   // Blood request form state
   const [requestForm, setRequestForm] = useState({
@@ -129,9 +150,8 @@ export default function BloodBanksAndDonation() {
     setLoading(true);
 
     try {
-      // In a real app, this would call an API
-      console.log('Blood request submitted:', requestForm);
-      toast.success('Blood request submitted successfully! Blood banks will contact you soon.');
+      const res = await bloodRequestAPI.create(requestForm);
+      toast.success('Blood request submitted successfully! Blood banks and donors will contact you soon.');
       setRequestForm({
         patientName: '',
         bloodGroup: '',
@@ -143,7 +163,9 @@ export default function BloodBanksAndDonation() {
         requesterPhone: '',
         requesterRelation: ''
       });
+      fetchMyRequests();
     } catch (error) {
+      console.error('Error submitting blood request:', error);
       toast.error('Failed to submit blood request. Please try again.');
     }
 
@@ -483,6 +505,45 @@ export default function BloodBanksAndDonation() {
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* My Blood Requests Section */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 24 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--red)' }}>
+              <Droplet size={20} color="var(--red)" /> My Blood Requests ({myRequests.length})
+            </h3>
+            {loadingRequests ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
+                <div className="loading-spinner"></div>
+              </div>
+            ) : myRequests.length === 0 ? (
+              <div className="card" style={{ textAlign: 'center', padding: '24px', color: 'var(--gray-500)', border: '1px dashed var(--gray-200)' }}>
+                <p>You haven't submitted any blood requests yet.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                {myRequests.map(req => (
+                  <div key={req._id} className="card hover-card" style={{ borderLeft: `4px solid ${req.urgency === 'critical' ? '#ef4444' : req.urgency === 'urgent' ? '#f59e0b' : 'var(--teal)'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', padding: '2px 6px', borderRadius: 4, background: req.urgency === 'critical' ? '#fee2e2' : req.urgency === 'urgent' ? '#fef3c7' : 'var(--teal-50)', color: req.urgency === 'critical' ? '#ef4444' : req.urgency === 'urgent' ? '#b45309' : 'var(--teal-800)' }}>
+                          {req.urgency}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--gray-500)' }}>{new Date(req.createdAt).toLocaleDateString('en-IN')}</span>
+                    </div>
+                    <h4 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Blood Group: <span style={{ color: 'var(--red)', fontSize: 16 }}>{req.bloodGroup}</span> ({req.units} Units)</h4>
+                    <p style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 2 }}><strong>Patient:</strong> {req.patientName}</p>
+                    <p style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 2 }}><strong>Hospital:</strong> {req.hospital}</p>
+                    {req.reason && <p style={{ fontSize: 12, color: 'var(--gray-500)', fontStyle: 'italic', marginTop: 4 }}>"{req.reason}"</p>}
+                    <div style={{ borderTop: '1px solid var(--gray-100)', marginTop: 10, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>Status:</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: req.status === 'fulfilled' ? '#10b981' : req.status === 'cancelled' ? '#ef4444' : '#f59e0b', textTransform: 'capitalize' }}>{req.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Blood Banks List */}

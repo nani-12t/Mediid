@@ -120,7 +120,7 @@ async function seedData() {
   console.log(`   ✅ Hospital ID: ${h1uid}`);
 
   // ── Doctors for Hospital 1 ──────────────────────────────────
-  console.log('   👨‍⚕️ Adding doctors...');
+  console.log('   👨⚕️ Adding doctors...');
   const h1doctors = [];
 
   const docData1 = [
@@ -188,7 +188,7 @@ async function seedData() {
 
   for (let i = 0; i < docData1.length; i++) {
     const updH = await Hospital.findByIdAndUpdate(hospital1._id, { $inc: { doctorSequence: 1 } }, { new: true });
-    const { uid, qrCode } = await generateDoctorIDAndQR(h1uid, updH.doctorSequence, i < 2 ? 'Senior Doctor' : 'Junior Doctor', {
+    const { uid, qrCode } = await generateDoctorIDAndQR(h1uid, updH.doctorSequence, {
       name: `Dr. ${docData1[i].firstName} ${docData1[i].lastName}`,
       specialization: docData1[i].specialization,
       hospitalName: hospital1.name
@@ -273,7 +273,7 @@ async function seedData() {
   console.log(`   ✅ Hospital ID: ${h2uid}`);
 
   // ── Doctors for Hospital 2 ──────────────────────────────────
-  console.log('   👨‍⚕️ Adding doctors...');
+  console.log('   👨⚕️ Adding doctors...');
   const h2doctors = [];
 
   const docData2 = [
@@ -341,7 +341,7 @@ async function seedData() {
 
   for (let i = 0; i < docData2.length; i++) {
     const updH = await Hospital.findByIdAndUpdate(hospital2._id, { $inc: { doctorSequence: 1 } }, { new: true });
-    const { uid, qrCode } = await generateDoctorIDAndQR(h2uid, updH.doctorSequence, i < 2 ? 'Senior Doctor' : 'Junior Doctor', {
+    const { uid, qrCode } = await generateDoctorIDAndQR(h2uid, updH.doctorSequence, {
       name: `Dr. ${docData2[i].firstName} ${docData2[i].lastName}`,
       specialization: docData2[i].specialization,
       hospitalName: hospital2.name
@@ -375,7 +375,7 @@ async function seedData() {
   // ═══════════════════════════════════════════════════════════
   // PATIENTS
   // ═══════════════════════════════════════════════════════════
-  console.log('\n🧑‍⚕️ Creating Patients...');
+  console.log('\n🧑⚕️ Creating Patients...');
 
   // Patient 1 — Arjun Sharma
   const p1User = await User.create({
@@ -628,7 +628,7 @@ async function seedData() {
   console.log(`│   HID     : ${h2uid}                      │`);
   console.log('└─────────────────────────────────────────────────────┘');
 
-  console.log('\n🧑‍⚕️ PATIENT LOGINS:');
+  console.log('\n🧑⚕️ PATIENT LOGINS:');
   console.log('┌─────────────────────────────────────────────────────┐');
   console.log(`│ Arjun Sharma (Diabetes + HTN)                       │`);
   console.log(`│   Email   : arjun@patient.com                       │`);

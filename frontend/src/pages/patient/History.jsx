@@ -180,6 +180,16 @@ export default function PatientHistory() {
   const [viewingDoc, setViewingDoc] = useState(null);
 
   const handleDownload = (doc) => {
+    if (doc.fileUrl) {
+      const link = document.createElement('a');
+      link.href = doc.fileUrl;
+      link.download = doc.fileName || `${doc.title.replace(/\s+/g, '_')}_MediID`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Document downloaded successfully!');
+      return;
+    }
     // Create a dummy blob to simulate a download
     const content = `MediID Medical Report\n\nTitle: ${doc.title}\nHospital: ${doc.hospitalName}\nDoctor: ${doc.doctorName}\nDate: ${formatDate(doc.uploadedAt)}\n\nThis is a dummy medical report file for demonstration purposes.`;
     const blob = new Blob([content], { type: 'text/plain' });
@@ -317,6 +327,31 @@ export default function PatientHistory() {
                     {viewingDoc.notes || 'This is an automated digital summary of the patient medical record as provided by the healthcare institution. For detailed diagnostics, please refer to the original physical copy or contact the hospital directly.'}
                   </p>
                 </div>
+
+                {viewingDoc.fileUrl && (
+                  <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid #f3f4f6' }}>
+                    <h4 style={{ fontSize: 13, fontWeight: 700, color: '#9ca3af', marginBottom: 12, textTransform: 'uppercase' }}>Document Attachment</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fafafa', minHeight: 180 }}>
+                      {viewingDoc.fileUrl.startsWith('data:image/') || viewingDoc.fileUrl.match(/\.(jpeg|jpg|gif|png)$/i) ? (
+                        <img src={viewingDoc.fileUrl} alt="Medical Attachment" style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }} />
+                      ) : viewingDoc.fileUrl.startsWith('data:application/pdf') ? (
+                        <object data={viewingDoc.fileUrl} type="application/pdf" width="100%" height="300px" style={{ borderRadius: 6 }}>
+                          <iframe src={viewingDoc.fileUrl} width="100%" height="300px" style={{ border: 'none' }}>
+                            <p>PDF preview not supported by browser. <a href={viewingDoc.fileUrl} download={viewingDoc.fileName || "document.pdf"} style={{ color: '#0d9488', fontWeight: 600 }}>Download PDF</a></p>
+                          </iframe>
+                        </object>
+                      ) : (
+                        <div style={{ textAlign: 'center', padding: 10 }}>
+                          <FileText size={40} color="#9ca3af" style={{ margin: '0 auto 8px' }} />
+                          <p style={{ fontSize: 13, color: '#4b5563', marginBottom: 10 }}>{viewingDoc.fileName || 'View Document'}</p>
+                          <a href={viewingDoc.fileUrl} download={viewingDoc.fileName || 'document'} className="btn btn-primary btn-sm" style={{ display: 'inline-block', textDecoration: 'none' }}>
+                            Download Document
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ marginTop: 64, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                   <div style={{ fontSize: 11, color: '#9ca3af' }}>

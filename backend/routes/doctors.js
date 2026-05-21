@@ -46,6 +46,7 @@ router.post('/', protect, authorize('hospital_admin'), async (req, res) => {
     const { uid, qrCode } = await generateDoctorIDAndQR(
       hospital.uid,
       updatedHospital.doctorSequence,
+      req.body.doctorType,
       {
         name: `Dr. ${req.body.firstName} ${req.body.lastName}`,
         specialization: req.body.specialization,

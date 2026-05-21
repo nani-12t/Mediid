@@ -38,6 +38,7 @@ const hospitalSchema = new mongoose.Schema({
 
   doctors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' }],
   staff: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Staff' }],
+  pharmacy: { type: mongoose.Schema.Types.ObjectId, ref: 'Pharmacy' },
 
   // Sequence counters — used to generate sequential doctor/staff IDs under this hospital
   doctorSequence: { type: Number, default: 0 },

@@ -2,13 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Search, QrCode, X, Download, Badge } from 'lucide-react';
 import HospitalLayout from '../../components/common/HospitalLayout';
 import toast from 'react-hot-toast';
-import axios from 'axios';
+import api, { staffAPI } from '../../utils/api';
 
 const ROLES = ['nurse','receptionist','lab_technician','pharmacist','ward_boy','security','administrator','radiologist','physiotherapist','other'];
 const SHIFTS = ['morning','afternoon','night','rotational'];
-
-const api = axios.create({ baseURL: '/api' });
-api.interceptors.request.use(c => { const t = localStorage.getItem('mediid_token'); if(t) c.headers.Authorization=`Bearer ${t}`; return c; });
 
 const emptyForm = { firstName:'', lastName:'', role:'nurse', department:'', phone:'', email:'', experience:'', qualifications:'', shift:'morning', dateOfJoining:'' };
 
@@ -23,7 +20,7 @@ export default function HospitalStaff() {
 
   const load = async () => {
     try {
-      const { data } = await api.get('/staff');
+      const { data } = await staffAPI.search({});
       setStaff(data);
     } catch(e) { toast.error('Failed to load staff'); }
   };
@@ -35,7 +32,7 @@ export default function HospitalStaff() {
     setLoading(true);
     try {
       const payload = { ...form, qualifications: form.qualifications.split(',').map(s=>s.trim()).filter(Boolean), experience: Number(form.experience) };
-      const { data } = await api.post('/staff', payload);
+      const { data } = await staffAPI.createStaff(payload);
       toast.success(`✅ Staff added! ID: ${data.uid}`);
       setShowModal(false);
       setForm(emptyForm);
@@ -48,7 +45,7 @@ export default function HospitalStaff() {
   const handleDelete = async (id) => {
     if(!window.confirm('Remove this staff member?')) return;
     try {
-      await api.delete(`/staff/${id}`);
+      await staffAPI.deleteStaff(id);
       toast.success('Staff removed');
       load();
     } catch { toast.error('Delete failed'); }

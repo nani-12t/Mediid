@@ -17,7 +17,6 @@ const connectDB = async () => {
     }
 
     try {
-        console.log('🔄 Connecting to Primary MongoDB...');
         const conn = await mongoose.connect(process.env.MONGO_URI, {
             serverSelectionTimeoutMS: 5000, 
             socketTimeoutMS: 45000,
@@ -38,7 +37,6 @@ const getMarketplaceConn = () => {
     const mainUri = process.env.MONGO_URI;
     const marketplaceUri = process.env.MARKETPLACE_URI || mainUri.replace(/\/[^/?]+(\?|$)/, '/mediid_marketplace$1');
     
-    console.log('🔄 Initializing Marketplace MongoDB connection...');
     marketplaceConn = mongoose.createConnection(marketplaceUri, {
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
