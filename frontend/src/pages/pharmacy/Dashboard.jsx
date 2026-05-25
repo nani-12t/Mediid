@@ -375,7 +375,7 @@ export default function PharmacyDashboard() {
                 }}>
                   <div style={{ textAlign: 'center', marginBottom: 15, borderBottom: '1px dashed #aaa', paddingBottom: 10 }}>
                     <h3 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 'bold' }}>MEDIID DIGITAL PHARMACY</h3>
-                    <p style={{ margin: 0, fontSize: 10 }}>{checkoutReceipt.hospitalName || 'Railway Medical Clinic'}</p>
+                    <p style={{ margin: 0, fontSize: 10 }}>{checkoutReceipt.hospitalName || 'Medical Clinic'}</p>
                     <p style={{ margin: 0, fontSize: 9 }}>Date: {checkoutReceipt.date}</p>
                   </div>
 

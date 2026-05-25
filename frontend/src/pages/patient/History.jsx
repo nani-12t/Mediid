@@ -191,7 +191,7 @@ export default function PatientHistory() {
       return;
     }
     // Create a dummy blob to simulate a download
-    const content = `MediID Medical Report\n\nTitle: ${doc.title}\nHospital: ${doc.hospitalName}\nDoctor: ${doc.doctorName}\nDate: ${formatDate(doc.uploadedAt)}\n\nThis is a dummy medical report file for demonstration purposes.`;
+    const content = `MediID Medical Report\n\nTitle: ${doc.title}\nHospital: ${doc.hospitalName}\nDate: ${formatDate(doc.uploadedAt)}\n\nThis is a dummy medical report file for demonstration purposes.`;
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -237,9 +237,7 @@ export default function PatientHistory() {
                 {doc.hospitalName && (
                   <p style={{ fontSize: 13, color: 'var(--gray-500)' }}>🏥 {doc.hospitalName}</p>
                 )}
-                {doc.doctorName && (
-                  <p style={{ fontSize: 13, color: 'var(--gray-500)' }}>👨‍⚕️ Dr. {doc.doctorName}</p>
-                )}
+
                 {doc.notes && (
                   <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 4 }}>
                     {doc.notes}
@@ -313,9 +311,7 @@ export default function PatientHistory() {
                   
                   <span style={{ fontWeight: 600, color: '#9ca3af' }}>Hospital:</span>
                   <span>{viewingDoc.hospitalName || 'MediID Central Hospital'}</span>
-                  
-                  <span style={{ fontWeight: 600, color: '#9ca3af' }}>Doctor:</span>
-                  <span>Dr. {viewingDoc.doctorName || 'Assigned Consultant'}</span>
+
                   
                   <span style={{ fontWeight: 600, color: '#9ca3af' }}>Date:</span>
                   <span>{formatDate(viewingDoc.uploadedAt)}</span>

@@ -4,6 +4,7 @@ import { Send, User, MessageSquare } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import PatientLayout from '../../components/common/PatientLayout';
 import BuyerLayout from '../../components/common/BuyerLayout';
+import HospitalLayout from '../../components/common/HospitalLayout';
 import { marketplaceAPI } from '../../utils/api';
 import toast from 'react-hot-toast';
 
@@ -119,8 +120,8 @@ function ChatPortalContent() {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        User
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${conv.otherUserEmail} (${conv.otherUserRole})`}>
+                        {conv.otherUserEmail || 'User'}
                       </span>
                       {conv.unreadCount > 0 && (
                         <span style={{ background: 'var(--teal)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10 }}>
@@ -128,6 +129,9 @@ function ChatPortalContent() {
                         </span>
                       )}
                     </div>
+                    <p style={{ margin: '2px 0', fontSize: 11, color: 'var(--gray-400)', textTransform: 'capitalize' }}>
+                      Role: {conv.otherUserRole}
+                    </p>
                     <p style={{ margin: 0, fontSize: 13, color: 'var(--gray-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {conv.lastMessage?.content}
                     </p>
@@ -149,8 +153,12 @@ function ChatPortalContent() {
                 <User size={16} />
               </div>
               <div>
-                <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--gray-900)' }}>Partner</h3>
-                <p style={{ margin: 0, fontSize: 12, color: 'var(--gray-500)' }}>Marketplace Discussion</p>
+                <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--gray-900)' }}>
+                  {conversations.find(c => c.otherUserId === activeChatId)?.otherUserEmail || 'Partner'}
+                </h3>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--gray-500)', textTransform: 'capitalize' }}>
+                  Role: {conversations.find(c => c.otherUserId === activeChatId)?.otherUserRole || 'Unknown'} • Marketplace Discussion
+                </p>
               </div>
             </div>
 
@@ -221,6 +229,53 @@ export default function ChatPortal() {
   
   if (user.role === 'buyer') {
     return <BuyerLayout title="Messages"><ChatPortalContent /></BuyerLayout>;
+  }
+  if (user.role === 'hospital_admin') {
+    return <HospitalLayout title="Messages"><ChatPortalContent /></HospitalLayout>;
+  }
+  if (user.role === 'doctor') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f5f6fa' }}>
+        <header style={{ 
+          background: '#092147', 
+          color: '#ffffff', 
+          padding: '14px 24px', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
+          zIndex: 10
+        }}>
+          <div>
+            <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#ffffff', letterSpacing: '0.02em', lineHeight: 1.2 }}>
+              Hospital Management Information System (HMIS)
+            </h1>
+            <p style={{ fontSize: 11, margin: 0, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>Doctor Messages Portal</p>
+          </div>
+          <button 
+            onClick={() => window.location.href = '/doctor'}
+            style={{ 
+              background: '#f2a900', 
+              color: '#092147', 
+              border: 'none', 
+              padding: '8px 16px', 
+              borderRadius: 4, 
+              fontSize: 12, 
+              fontWeight: 'bold', 
+              cursor: 'pointer',
+              transition: 'background 0.2s'
+            }}
+            onMouseOver={(e) => e.target.style.background = '#e09a00'}
+            onMouseOut={(e) => e.target.style.background = '#f2a900'}
+          >
+            Back to Dashboard
+          </button>
+        </header>
+        <div style={{ flex: 1, padding: 24, display: 'flex', flexDirection: 'column' }}>
+          <ChatPortalContent />
+        </div>
+      </div>
+    );
   }
   
   return <PatientLayout title="Messages"><ChatPortalContent /></PatientLayout>;

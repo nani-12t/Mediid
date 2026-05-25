@@ -2,7 +2,15 @@ import axios from 'axios';
 
 // Ensure API URL consistently ends with /api even if configured without it in Vercel
 const getBaseURL = () => {
-  let url = process.env.REACT_APP_API_URL || 'https://backend-i4iy.vercel.app/api';
+  let url = process.env.REACT_APP_API_URL;
+  
+  if (!url) {
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      url = 'http://localhost:5000/api';
+    } else {
+      url = 'https://backend-i4iy.vercel.app/api';
+    }
+  }
   
   // Strip trailing slashes and ensure /api is exactly there
   url = url.trim().replace(/\/+$/, '');
@@ -23,6 +31,15 @@ const api = axios.create({
 
 // Attach token to every request
 api.interceptors.request.use(config => {
+  const isHospitalRoute = typeof window !== 'undefined' && window.location.pathname.includes('/hospital');
+  
+  if (config.url && config.url.includes('/doctor-portal') && isHospitalRoute) {
+    const docToken = sessionStorage.getItem('hospital_doctor_token');
+    if (docToken) {
+      config.headers.Authorization = `Bearer ${docToken}`;
+      return config;
+    }
+  }
   const token = localStorage.getItem('mediid_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
@@ -35,13 +52,26 @@ api.interceptors.response.use(
     const isAuthRequest = err.config?.url?.includes('/auth/login') || err.config?.url?.includes('/auth/register');
     
     if (err.response?.status === 401 && !isAuthRequest) {
-      console.warn('🔑 Session expired or invalid token. Clearing storage.');
-      localStorage.removeItem('mediid_token');
-      localStorage.removeItem('mediid_user');
+      const authHeader = err.config?.headers?.Authorization || err.config?.headers?.authorization;
+      const isDoctorRequest = err.config?.url?.includes('/doctor-portal');
+      const docToken = sessionStorage.getItem('hospital_doctor_token');
       
-      // Only redirect if we aren't already trying to login
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
-        window.location.href = '/login';
+      if (isDoctorRequest && docToken && authHeader === `Bearer ${docToken}`) {
+        console.warn('🔑 Doctor session expired or invalid token. Clearing doctor session.');
+        sessionStorage.removeItem('hospital_doctor_token');
+        sessionStorage.removeItem('hospital_doctor_profile');
+        window.location.reload();
+      } else {
+        console.warn('🔑 Session expired or invalid token. Clearing storage.');
+        localStorage.removeItem('mediid_token');
+        localStorage.removeItem('mediid_user');
+        sessionStorage.removeItem('hospital_doctor_token');
+        sessionStorage.removeItem('hospital_doctor_profile');
+        
+        // Only redirect if we aren't already trying to login
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(err);
@@ -207,6 +237,19 @@ export const bloodRequestAPI = {
 export const medicineOrderAPI = {
   create: (data) => api.post('/medicine-orders', data),
   getMyOrders: () => api.get('/medicine-orders/my'),
+};
+
+// Doctor Portal
+export const doctorPortalAPI = {
+  getQueue: () => api.get('/doctor-portal/queue'),
+  getPatient: (uid) => api.get(`/doctor-portal/patient/${uid}`),
+  savePrescription: (data) => api.post('/doctor-portal/prescription', data)
+};
+
+// Pharmacy Portal
+export const pharmacyPortalAPI = {
+  getPrescriptions: (uid) => api.get(`/pharmacy-portal/prescription/${uid}`),
+  dispensePrescription: (data) => api.post('/pharmacy-portal/dispense', data)
 };
 
 export default api;

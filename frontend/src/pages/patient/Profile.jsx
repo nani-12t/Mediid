@@ -533,7 +533,7 @@ export default function PatientProfile() {
                         </span>
                       </div>
                       {doc.hospitalName && <p style={{ fontSize: 12, color: 'var(--gray-400)' }}>🏥 {doc.hospitalName}</p>}
-                      {doc.doctorName   && <p style={{ fontSize: 12, color: 'var(--gray-400)' }}>👨‍⚕️ {doc.doctorName}</p>}
+
                       {doc.fileName     && (
                         <p style={{ fontSize: 11, color: 'var(--gray-300)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <File size={11} /> {doc.fileName}
@@ -987,7 +987,7 @@ export default function PatientProfile() {
             <div style={{ ...modalBody, padding: '20px 24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 13, background: 'var(--gray-50)', padding: 12, borderRadius: 10 }}>
                 {previewDoc.hospitalName && <div><span style={{color: 'var(--gray-400)'}}>Hospital:</span> <strong>{previewDoc.hospitalName}</strong></div>}
-                {previewDoc.doctorName && <div><span style={{color: 'var(--gray-400)'}}>Doctor:</span> <strong>{previewDoc.doctorName}</strong></div>}
+
                 <div><span style={{color: 'var(--gray-400)'}}>Uploaded:</span> <strong>{new Date(previewDoc.uploadedAt).toLocaleDateString('en-IN')}</strong></div>
                 {previewDoc.fileName && <div><span style={{color: 'var(--gray-400)'}}>File Name:</span> <strong>{previewDoc.fileName}</strong></div>}
               </div>

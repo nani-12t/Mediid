@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Shield, LayoutDashboard, Users, Calendar, FileText, Activity, Settings, LogOut, Bell, Building, UserCheck, Maximize } from 'lucide-react';
+import { Shield, LayoutDashboard, Users, Calendar, FileText, Activity, Settings, LogOut, Bell, Building, UserCheck, Maximize, Stethoscope, Pill, Database, MessageSquare } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
@@ -10,6 +10,10 @@ const navItems = [
   { to: '/hospital/reports', icon: FileText, label: 'Reports' },
   { to: '/hospital/analytics', icon: Activity, label: 'Analytics' },
   { to: '/hospital/qr', icon: Maximize, label: 'Hospital QR' },
+  { to: '/hospital/doctor-portal', icon: Stethoscope, label: 'Doctor Portal' },
+  { to: '/hospital/pharmacy-portal', icon: Pill, label: 'Pharmacy Portal' },
+  { to: '/hospital/marketplace', icon: Database, label: 'Data Marketplace' },
+  { to: '/messages', icon: MessageSquare, label: 'Messages' },
   { to: '/hospital/settings', icon: Settings, label: 'Settings' },
 ];
 
@@ -49,13 +53,10 @@ export default function HospitalLayout({ children, title }) {
               {item.label}
             </NavLink>
           ))}
-        </nav>
-
-        <div style={{ padding: '0 12px 8px' }}>
-          <button className="sidebar-link" onClick={handleLogout} style={{ color: 'rgba(255,100,100,0.7)', width: '100%' }}>
-            <LogOut size={16} /> Sign Out
+          <button className="sidebar-link" onClick={handleLogout} style={{ color: 'rgba(255,100,100,0.85)' }}>
+            <LogOut size={18} /> Logout
           </button>
-        </div>
+        </nav>
       </aside>
 
       <div className="main-content" style={{ flex: 1 }}>

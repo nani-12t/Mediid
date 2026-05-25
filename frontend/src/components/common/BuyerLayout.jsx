@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 const navItems = [
   { to: '/buyer/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/buyer/post-requirement', icon: PlusCircle, label: 'Post Requirement' },
-  // { to: '/buyer/chat', icon: MessageSquare, label: 'Messages' },
+  { to: '/buyer/chat', icon: MessageSquare, label: 'Messages' },
 ];
 
 export default function BuyerLayout({ children, title }) {

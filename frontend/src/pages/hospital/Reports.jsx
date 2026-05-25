@@ -23,7 +23,7 @@ export default function HospitalReports() {
   // Form states
   const [formType, setFormType] = useState('scan');
   const [formTitle, setFormTitle] = useState('');
-  const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
+  const [formDate, setFormDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [formPriority, setFormPriority] = useState('normal');
   const [formNotes, setFormNotes] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -148,7 +148,7 @@ export default function HospitalReports() {
     setSearchError('');
     setFormType('scan');
     setFormTitle('');
-    setFormDate(new Date().toISOString().split('T')[0]);
+    setFormDate(new Date().toLocaleDateString('en-CA'));
     setFormPriority('normal');
     setFormNotes('');
     setSelectedFile(null);

@@ -392,7 +392,7 @@ async function seedData() {
     lastName: 'Sharma',
     dateOfBirth: new Date('1990-04-15'),
     gender: 'male',
-    phone: '+91-9988776655',
+    phone: '+91-8074235640',
     address: { street: '14 Anna Nagar East', city: 'Chennai', state: 'Tamil Nadu', pincode: '600102' },
     emergency: {
       bloodGroup: 'B+',

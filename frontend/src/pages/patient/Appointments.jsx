@@ -61,9 +61,21 @@ export default function PatientAppointments() {
     setConfirming(null);
   };
 
-  const now      = new Date();
-  const upcoming = appointments.filter(a => new Date(a.appointmentDate) >= now && a.status !== 'cancelled' && a.status !== 'completed');
-  const past     = appointments.filter(a => new Date(a.appointmentDate) <  now || a.status === 'cancelled' || a.status === 'completed');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const upcoming = appointments.filter(a => {
+    const apptDate = new Date(a.appointmentDate);
+    apptDate.setHours(0, 0, 0, 0);
+    return apptDate >= today && a.status !== 'cancelled' && a.status !== 'completed';
+  });
+
+  const past = appointments.filter(a => {
+    const apptDate = new Date(a.appointmentDate);
+    apptDate.setHours(0, 0, 0, 0);
+    return apptDate < today || a.status === 'cancelled' || a.status === 'completed';
+  });
+
   const shown    = tab === 'upcoming' ? upcoming : past;
 
   const pendingCount = upcoming.filter(a => a.status === 'pending').length;
@@ -143,26 +155,39 @@ export default function PatientAppointments() {
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4, flexWrap:'wrap' }}>
                     <p style={{ fontSize:15, fontWeight:600 }}>Dr. {apt.doctor?.firstName} {apt.doctor?.lastName}</p>
-                    <span className={`badge ${STATUS_COLORS[apt.status]}`} style={{ fontSize:11, textTransform:'capitalize' }}>
-                      {apt.status === 'pending' ? '⏳ Pending Confirmation' :
-                       apt.status === 'confirmed' ? '✅ Confirmed' :
+                    <span className={`badge ${
+                      apt.status === 'completed' ? 'badge-gray' :
+                      apt.status === 'cancelled' ? 'badge-red' :
+                      new Date(apt.appointmentDate).setHours(0,0,0,0) < new Date().setHours(0,0,0,0) ? 'badge-amber' :
+                      STATUS_COLORS[apt.status]
+                    }`} style={{ fontSize:11, textTransform:'capitalize' }}>
+                      {apt.status === 'completed' ? '🏁 Completed' :
                        apt.status === 'cancelled' ? '❌ Cancelled' :
-                       apt.status === 'completed' ? '🏁 Completed' : apt.status}
+                       new Date(apt.appointmentDate).setHours(0,0,0,0) < new Date().setHours(0,0,0,0) ? '⚠️ Not Attended' :
+                       apt.status === 'pending' ? '⏳ Pending Confirmation' :
+                       apt.status === 'confirmed' ? '✅ Confirmed' : apt.status}
                     </span>
                   </div>
                   <p style={{ fontSize:13, color:'var(--teal)', fontWeight:500, marginBottom:2 }}>{apt.doctor?.specialization}</p>
                   <p style={{ fontSize:13, color:'var(--gray-500)' }}>🏥 {apt.hospital?.name}</p>
                   {apt.timeSlot && <p style={{ fontSize:13, color:'var(--gray-400)', marginTop:2 }}>⏰ {apt.timeSlot}</p>}
                   {apt.symptoms && <p style={{ fontSize:13, color:'var(--gray-500)', marginTop:4, fontStyle:'italic' }}>💬 "{apt.symptoms}"</p>}
-                  <div style={{ display:'flex', gap:6, marginTop:6, flexWrap:'wrap' }}>
-                    <span className="badge badge-gray" style={{ fontSize:10 }}>
-                      {METHOD_ICONS[apt.bookingMethod]} {apt.bookingMethod}
-                    </span>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {/* Appointment Type badge */}
+                    {(apt.type === 'video' || apt.type === 'teleconsultation') ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'hsl(262, 95%, 96%)', border: '1px solid hsl(262, 80%, 85%)', color: '#6d28d9', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6 }}>
+                        📹 Video Consultation
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'hsl(172, 95%, 96%)', border: '1px solid hsl(172, 80%, 85%)', color: 'var(--teal-dark)', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6 }}>
+                        🏥 In-Clinic Visit
+                      </span>
+                    )}
                     {apt.confirmationMethod === 'patient_sms' && (
-                      <span className="badge badge-teal" style={{ fontSize:10 }}>📱 Confirmed via SMS</span>
+                      <span className="badge badge-teal" style={{ fontSize: 10 }}>📱 Confirmed via SMS</span>
                     )}
                     {apt.confirmationMethod === 'hospital_admin' && (
-                      <span className="badge badge-teal" style={{ fontSize:10 }}>🏥 Confirmed by Hospital</span>
+                      <span className="badge badge-teal" style={{ fontSize: 10 }}>🏥 Confirmed by Hospital</span>
                     )}
                   </div>
                 </div>

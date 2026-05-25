@@ -32,17 +32,7 @@ const LOGIN_ROLES = [
     title: 'Precision Doctor Desk',
     desc: 'Review patient medical files within approved 10-minute windows, record vital signs, and write electronic prescriptions.',
     highlights: ['Token Queue Dashboard', 'Secure Diagnostics Hub', 'E-Prescription Assistant'],
-    demoEmail: 'dr.rajesh@apollo.com',
-    demoPass: 'Test@1234'
-  },
-  {
-    value: 'pharmacy',
-    label: 'Pharmacy',
-    icon: '💊',
-    title: 'Dispensing & Invoicing Portal',
-    desc: 'Retrieve validated electronic prescriptions instantly using Patient UIDs, check off inventory, and process billing.',
-    highlights: ['Prescription Syncing', 'Interactive Medication Checklist', 'Dispensing Status Audit'],
-    demoEmail: 'pharmacy1@apollo.com',
+    demoEmail: 'dr.batra@clinic.com',
     demoPass: 'Test@1234'
   },
   {

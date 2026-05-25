@@ -146,12 +146,12 @@ export default function Marketplace() {
                   style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px' }}>
                   <Upload size={16} /> Upload Documents
                 </button>
-                {/* <button 
+                 <button 
                   onClick={() => handleApply(req._id)}
-                  className="btn" 
+                  className="btn btn-outline" 
                   style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px' }}>
                   Connect <ChevronRight size={16} />
-                </button> */}
+                </button>
               </div>
             </div>
           ))}

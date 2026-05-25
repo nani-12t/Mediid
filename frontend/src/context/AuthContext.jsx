@@ -28,6 +28,8 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => { loadUser(); }, [loadUser]);
 
   const login = async (email, password) => {
+    sessionStorage.removeItem('hospital_doctor_token');
+    sessionStorage.removeItem('hospital_doctor_profile');
     const { data } = await authAPI.login({ email, password });
     localStorage.setItem('mediid_token', data.token);
     setUser(data.user);
@@ -36,6 +38,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (formData) => {
+    sessionStorage.removeItem('hospital_doctor_token');
+    sessionStorage.removeItem('hospital_doctor_profile');
     const { data } = await authAPI.register(formData);
     localStorage.setItem('mediid_token', data.token);
     setUser(data.user);
@@ -45,6 +49,8 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('mediid_token');
+    sessionStorage.removeItem('hospital_doctor_token');
+    sessionStorage.removeItem('hospital_doctor_profile');
     setUser(null);
     setProfile(null);
     toast.success('Logged out successfully');

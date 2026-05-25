@@ -29,6 +29,10 @@ const Doctor      = require('./models/Doctor');
 const Staff       = require('./models/Staff');
 const Patient     = require('./models/Patient');
 const Appointment = require('./models/Appointment');
+const Buyer       = require('./models/marketplace/Buyer');
+const Requirement = require('./models/marketplace/Requirement');
+const Submission  = require('./models/marketplace/Submission');
+const Message     = require('./models/marketplace/Message');
 
 const {
   generateHospitalIDAndQR,
@@ -45,13 +49,13 @@ const daysAgo = (n) => new Date(Date.now() - n * 86400000);
 
 // ─── Main Seed Function ─────────────────────────────────────────────────────
 async function seedData() {
-  // Check if seeding is already done
+  // Check if seeding is already done (bypassed for testing / buyer seeding)
   try {
-    const existingUsers = await User.countDocuments();
-    if (existingUsers > 0) {
-      console.log('✅ Database already seeded. Skipping...');
-      return { success: true, message: 'Database already has data. Skipping seed.' };
-    }
+    // const existingUsers = await User.countDocuments();
+    // if (existingUsers > 0) {
+    //   console.log('✅ Database already seeded. Skipping...');
+    //   return { success: true, message: 'Database already has data. Skipping seed.' };
+    // }
   } catch (err) {
     console.error('❌ Error checking for existing data:', err.message);
   }
@@ -64,6 +68,10 @@ async function seedData() {
   await Staff.deleteMany({});
   await Patient.deleteMany({});
   await Appointment.deleteMany({});
+  await Buyer.deleteMany({});
+  await Requirement.deleteMany({});
+  await Submission.deleteMany({});
+  await Message.deleteMany({});
   console.log('   Done.\n');
 
   // ═══════════════════════════════════════════════════════════
@@ -194,6 +202,14 @@ async function seedData() {
       hospitalName: hospital1.name
     });
     const doc = await Doctor.create({ ...docData1[i], hospital: hospital1._id, uid, qrCode });
+    const user = await User.create({
+      email: docData1[i].email.toLowerCase(),
+      uid,
+      password: 'Test@1234',
+      role: 'doctor'
+    });
+    doc.user = user._id;
+    await doc.save();
     await Hospital.findByIdAndUpdate(hospital1._id, { $push: { doctors: doc._id } });
     h1doctors.push(doc);
     console.log(`      ✅ ${uid} — Dr. ${docData1[i].firstName} ${docData1[i].lastName} (${docData1[i].specialization})`);
@@ -347,6 +363,14 @@ async function seedData() {
       hospitalName: hospital2.name
     });
     const doc = await Doctor.create({ ...docData2[i], hospital: hospital2._id, uid, qrCode });
+    const user = await User.create({
+      email: docData2[i].email.toLowerCase(),
+      uid,
+      password: 'Test@1234',
+      role: 'doctor'
+    });
+    doc.user = user._id;
+    await doc.save();
     await Hospital.findByIdAndUpdate(hospital2._id, { $push: { doctors: doc._id } });
     h2doctors.push(doc);
     console.log(`      ✅ ${uid} — Dr. ${docData2[i].firstName} ${docData2[i].lastName} (${docData2[i].specialization})`);
@@ -373,6 +397,96 @@ async function seedData() {
   }
 
   // ═══════════════════════════════════════════════════════════
+  // CLINIC 1 — Batra Homeopathy Clinic (Private Clinic)
+  // ═══════════════════════════════════════════════════════════
+  console.log('\n🏥 Creating Clinic 1: Batra Homeopathy Clinic...');
+
+  const c1User = await User.create({
+    email: 'clinic@batraclinic.com',
+    password: 'Test@1234',
+    role: 'hospital_admin'
+  });
+
+  const { uid: c1uid, qrCode: c1qr } = await generateHospitalIDAndQR({
+    name: 'Batra Homeopathy Clinic',
+    email: 'clinic@batraclinic.com'
+  });
+
+  const clinic1 = await Hospital.create({
+    user: c1User._id,
+    uid: c1uid,
+    qrCode: c1qr,
+    name: 'Batra Homeopathy Clinic',
+    registrationNumber: 'DL-CLINIC-2015-0891',
+    type: 'clinic',
+    address: {
+      street: 'Flat 4B, Pocket C, Vasant Kunj',
+      city: 'New Delhi',
+      state: 'Delhi',
+      pincode: '110070',
+      coordinates: { lat: 28.5385, lng: 77.1590 }
+    },
+    contact: {
+      phone: '+91-11-26891234',
+      email: 'info@batraclinic.com',
+      website: 'https://batraclinic.com',
+      emergencyPhone: '+91-9811223344'
+    },
+    specialties: ['Homeopathy', 'Alternative Medicine', 'Allergy Treatment'],
+    facilities: ['OPD Consultations', 'Pharmacy Dispensing', 'Allergy Testing'],
+    operatingHours: {
+      weekdays: { open: '09:00', close: '20:00' },
+      weekends: { open: '09:00', close: '13:00' },
+      is24x7: false
+    },
+    totalBeds: 0,
+    icuBeds: 0,
+    accreditations: ['NABH-Clinic'],
+    rating: { average: 4.8, count: 450 },
+    isVerified: true,
+    doctorSequence: 0,
+    staffSequence: 0
+  });
+  console.log(`   ✅ Clinic ID: ${c1uid}`);
+
+  // ── Doctor for Clinic 1 ─────────────────────────────────────
+  console.log('   👨‍⚕️ Adding Clinic Doctor...');
+  const clinicDoctorData = {
+    firstName: 'Alok', lastName: 'Batra',
+    specialization: 'Homeopathy',
+    qualifications: ['BHMS', 'MD (Homeopathy)'],
+    experience: 15, consultationFee: 500,
+    phone: '+91-9811223344', email: 'dr.batra@clinic.com',
+    expertise: ['Chronic diseases', 'Respiratory ailments', 'Allergic disorders'],
+    languages: ['Hindi', 'English'],
+    availability: [
+      { day: 'Monday',    startTime: '09:00', endTime: '13:00', maxAppointments: 20 },
+      { day: 'Wednesday', startTime: '09:00', endTime: '13:00', maxAppointments: 20 },
+      { day: 'Friday',    startTime: '09:00', endTime: '13:00', maxAppointments: 20 }
+    ],
+    rating: { average: 4.8, count: 450 }, status: 'available'
+  };
+
+  const updC = await Hospital.findByIdAndUpdate(clinic1._id, { $inc: { doctorSequence: 1 } }, { new: true });
+  const { uid: cdocUid, qrCode: cdocQr } = await generateDoctorIDAndQR(c1uid, updC.doctorSequence, 'Senior Doctor', {
+    name: `Dr. ${clinicDoctorData.firstName} ${clinicDoctorData.lastName}`,
+    specialization: clinicDoctorData.specialization,
+    hospitalName: clinic1.name
+  });
+
+  const clinicDoc = await Doctor.create({ ...clinicDoctorData, hospital: clinic1._id, uid: cdocUid, qrCode: cdocQr });
+  const clinicDocUser = await User.create({
+    email: clinicDoctorData.email.toLowerCase(),
+    uid: cdocUid,
+    password: 'Test@1234',
+    role: 'doctor'
+  });
+  clinicDoc.user = clinicDocUser._id;
+  await clinicDoc.save();
+  await Hospital.findByIdAndUpdate(clinic1._id, { $push: { doctors: clinicDoc._id } });
+  console.log(`      ✅ ${cdocUid} — Dr. ${clinicDoctorData.firstName} ${clinicDoctorData.lastName} (${clinicDoctorData.specialization})`);
+
+  // ═══════════════════════════════════════════════════════════
   // PATIENTS
   // ═══════════════════════════════════════════════════════════
   console.log('\n🧑‍⚕️ Creating Patients...');
@@ -392,7 +506,7 @@ async function seedData() {
     lastName: 'Sharma',
     dateOfBirth: new Date('1990-04-15'),
     gender: 'male',
-    phone: '+91-9988776655',
+    phone: '+91-8074235640',
     address: { street: '14 Anna Nagar East', city: 'Chennai', state: 'Tamil Nadu', pincode: '600102' },
     emergency: {
       bloodGroup: 'B+',
@@ -604,9 +718,80 @@ async function seedData() {
       prescription: { uploadedAt: daysAgo(45), notes: 'X-ray: Grade 2 OA knee. Physiotherapy 10 sessions. Glucosamine + Chondroitin.' },
       billAmount: 1800, billStatus: 'insurance_claimed',
       staffNotes: 'OA right knee diagnosed. X-ray done. Referred for physiotherapy.'
+    },
+    // Priya → Clinic → Dr. Alok Batra — CONFIRMED (Today)
+    {
+      patient: patient2._id, doctor: clinicDoc._id, hospital: clinic1._id,
+      appointmentDate: new Date(), timeSlot: '11:00 AM',
+      status: 'confirmed', type: 'consultation', bookingMethod: 'app',
+      symptoms: 'Chronic allergic rhinitis flare-up, sneezing and nasal congestion.',
+      confirmedAt: new Date(), billAmount: 500, billStatus: 'pending'
+    },
+    // Arjun → Clinic → Dr. Alok Batra — PENDING (Today)
+    {
+      patient: patient1._id, doctor: clinicDoc._id, hospital: clinic1._id,
+      appointmentDate: new Date(), timeSlot: '03:00 PM',
+      status: 'pending', type: 'consultation', bookingMethod: 'app',
+      symptoms: 'Mild joint pain and request for general homeopathic health tonic.',
+      billAmount: 500, billStatus: 'pending'
     }
   ]);
   console.log(`   ✅ Created ${appointments.length} appointments`);
+
+  // ═══════════════════════════════════════════════════════════
+  // RESEARCHER / BUYER & REQUIREMENTS
+  // ═══════════════════════════════════════════════════════════
+  console.log('\n🛒 Creating Researcher/Buyer...');
+  const buyerUser = await User.create({
+    email: 'buyer@research.com',
+    password: 'Test@1234',
+    role: 'buyer'
+  });
+
+  const buyer = await Buyer.create({
+    user: buyerUser._id,
+    companyName: 'MedAI Research Labs',
+    description: 'Pioneering artificial intelligence in clinical oncology and cardiology. We buy anonymous patient telemetry and imaging datasets for training diagnostics.',
+    website: 'https://medai-research.org',
+    phone: '+1-555-0199',
+    address: 'Silicon Valley, California'
+  });
+  console.log(`   ✅ Created Buyer: ${buyer.companyName}`);
+
+  console.log('📋 Creating Requirements...');
+  const reqs = await Requirement.create([
+    {
+      buyer: buyer._id,
+      title: 'Anonymized ECG Datasets for Arrhythmia Study',
+      amount: '500 patients',
+      dataNeeded: 'ECG reports & Cardiologist notes',
+      description: 'We are seeking anonymized clinical ECG reports with corresponding physician notes confirming sinus rhythm or specific arrhythmias (AFib, PVCs). Only scanned or PDF/structured report files.',
+      pricing: {
+        prescriptions: 100,
+        scans: 300,
+        xrays: 200,
+        labReports: 150
+      },
+      requiredDocs: ['scans', 'labReports'],
+      status: 'active'
+    },
+    {
+      buyer: buyer._id,
+      title: 'Type 2 Diabetes HbA1c Lab Report Records',
+      amount: '1,000 patients',
+      dataNeeded: 'HbA1c Lab Test results, Vitals history',
+      description: 'Researching long-term glycemic variations. Looking for structured lab reports detailing HbA1c history along with patient vitals (weight, age, blood pressure). All data must be completely anonymized.',
+      pricing: {
+        prescriptions: 50,
+        scans: 100,
+        xrays: 50,
+        labReports: 250
+      },
+      requiredDocs: ['labReports', 'prescriptions'],
+      status: 'active'
+    }
+  ]);
+  console.log(`   ✅ Created ${reqs.length} marketplace requirements`);
 
   // ═══════════════════════════════════════════════════════════
   // SUMMARY
@@ -628,6 +813,15 @@ async function seedData() {
   console.log(`│   HID     : ${h2uid}                      │`);
   console.log('└─────────────────────────────────────────────────────┘');
 
+  console.log('\n👨‍⚕️ CLINICAL (PRIVATE) DOCTOR LOGINS:');
+  console.log('┌─────────────────────────────────────────────────────┐');
+  console.log(`│ Batra Homeopathy Clinic (Dr. Alok Batra)            │`);
+  console.log(`│   Email   : dr.batra@clinic.com                     │`);
+  console.log(`│   Password: Test@1234                               │`);
+  console.log(`│   Doc ID  : ${cdocUid}                │`);
+  console.log(`│   ClinicID: ${c1uid}                      │`);
+  console.log('└─────────────────────────────────────────────────────┘');
+
   console.log('\n🧑‍⚕️ PATIENT LOGINS:');
   console.log('┌─────────────────────────────────────────────────────┐');
   console.log(`│ Arjun Sharma (Diabetes + HTN)                       │`);
@@ -646,12 +840,22 @@ async function seedData() {
   console.log(`│   MID     : ${p3uid}                      │`);
   console.log('└─────────────────────────────────────────────────────┘');
 
+  console.log('\n🛒 RESEARCHER/BUYER LOGINS:');
+  console.log('┌─────────────────────────────────────────────────────┐');
+  console.log(`│ MedAI Research Labs                                 │`);
+  console.log(`│   Email   : buyer@research.com                      │`);
+  console.log(`│   Password: Test@1234                               │`);
+  console.log('└─────────────────────────────────────────────────────┘');
+
   console.log('\n📊 DATA SUMMARY:');
   console.log(`   Hospitals   : 2`);
-  console.log(`   Doctors     : ${h1doctors.length + h2doctors.length} (${h1doctors.length} Apollo + ${h2doctors.length} Fortis)`);
+  console.log(`   Clinics     : 1`);
+  console.log(`   Doctors     : ${h1doctors.length + h2doctors.length + 1} (${h1doctors.length} Apollo + ${h2doctors.length} Fortis + 1 Private)`);
   console.log(`   Staff       : ${staffData1.length + staffData2.length} (${staffData1.length} Apollo + ${staffData2.length} Fortis)`);
-  console.log(`   Patients    : 3`);
-  console.log(`   Appointments: ${appointments.length} (2 confirmed, 2 pending, 2 completed)`);
+  console.log(`   Patients    : 4`);
+  console.log(`   Appointments: ${appointments.length} (3 confirmed, 3 pending, 2 completed)`);
+  console.log(`   Researchers : 1`);
+  console.log(`   Requirements: 2`);
 
   console.log('\n💡 ID FORMAT EXAMPLES:');
   console.log(`   Hospital : ${h1uid}`);

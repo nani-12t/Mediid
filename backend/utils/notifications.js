@@ -272,7 +272,8 @@ const sendAppointmentNotification = async (apt, type, overridePhone = null, conf
   }
 
   await sendSMS(phone, sms);
-  await sendWhatsApp(phone, wa);
+  // WhatsApp notification dispatch disabled per user request:
+  // await sendWhatsApp(phone, wa);
 };
 
 /* ── Legacy compat ── */

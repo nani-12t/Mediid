@@ -34,6 +34,9 @@ router.post('/', protect, authorize('patient'), async (req, res) => {
       billStatus: 'pending'
     });
 
+    const { scheduleAppointmentReminder } = require('../utils/scheduler');
+    await scheduleAppointmentReminder(appointment);
+
     const full = await pop(Appointment.findById(appointment._id));
 
     // Send SMS + WhatsApp instantly with the confirm link
@@ -84,12 +87,34 @@ router.get('/confirm/:token', async (req, res) => {
       `);
     }
 
+    const ConsultationSession = require('../models/ConsultationSession');
+    const crypto = require('crypto');
+    const { getAppointmentStartDateTime } = require('../utils/scheduler');
+    const { getIo } = require('../utils/socket');
+
     // Mark confirmed by patient
     apt.status             = 'confirmed';
     apt.confirmTokenUsed   = true;
     apt.patientConfirmedAt = new Date();
     apt.confirmedAt        = new Date();
     apt.confirmationMethod = 'patient_sms';
+    apt.confirmationTime   = new Date();
+
+    // Calculate expiration: 2 hours after the slot start time
+    const apptStart = getAppointmentStartDateTime(apt.appointmentDate, apt.timeSlot) || new Date();
+    const expiresAt = new Date(apptStart.getTime() + 2 * 60 * 60 * 1000);
+
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    const session = await ConsultationSession.create({
+      patient: apt.patient,
+      doctor: apt.doctor,
+      appointment: apt._id,
+      token: sessionToken,
+      status: 'active',
+      expiresAt
+    });
+
+    apt.consultationSessionId = session._id;
     apt.updatedAt          = new Date();
     await apt.save();
 
@@ -98,6 +123,23 @@ router.get('/confirm/:token', async (req, res) => {
 
     // Send confirmation SMS + WhatsApp to patient
     await sendAppointmentNotification(full, 'confirmed');
+
+    // Notify doctor dashboard in real-time
+    const io = getIo();
+    if (io) {
+      const docRoom = apt.doctor.toString();
+      io.to(docRoom).emit('appointment_confirmed', {
+        appointmentId: apt._id,
+        patientName: `${full.patient?.firstName} ${full.patient?.lastName}`,
+        timeSlot: apt.timeSlot
+      });
+      io.emit('appointment_confirmed', {
+        appointmentId: apt._id,
+        doctorId: apt.doctor,
+        patientName: `${full.patient?.firstName} ${full.patient?.lastName}`,
+        timeSlot: apt.timeSlot
+      });
+    }
 
     const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
     const doc   = `Dr. ${full.doctor?.firstName} ${full.doctor?.lastName}`;
@@ -273,6 +315,43 @@ router.put('/:id/pay', protect, authorize('patient'), async (req, res) => {
 
     res.json({ message: 'Appointment consultation fee paid successfully', appointment });
   } catch (err) {
+    res.status(500).json({ message: 'Server error', detail: err.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════
+   POST /api/appointments/:id/check-in  — patient checked in
+══════════════════════════════════════════════════════════ */
+router.post('/:id/check-in', protect, authorize('doctor', 'hospital_admin'), async (req, res) => {
+  try {
+    const apt = await Appointment.findById(req.params.id);
+    if (!apt) return res.status(404).json({ message: 'Appointment not found' });
+
+    apt.status = 'checked_in';
+    apt.updatedAt = new Date();
+    await apt.save();
+
+    const full = await pop(Appointment.findById(apt._id));
+
+    // Notify doctor dashboard in real-time
+    const { getIo } = require('../utils/socket');
+    const io = getIo();
+    if (io) {
+      const docRoom = apt.doctor.toString();
+      io.to(docRoom).emit('patient_checked_in', {
+        appointmentId: apt._id,
+        patientName: `${full.patient?.firstName} ${full.patient?.lastName}`
+      });
+      io.emit('patient_checked_in', {
+        appointmentId: apt._id,
+        doctorId: apt.doctor,
+        patientName: `${full.patient?.firstName} ${full.patient?.lastName}`
+      });
+    }
+
+    res.json(full);
+  } catch (err) {
+    console.error('Check-in error:', err);
     res.status(500).json({ message: 'Server error', detail: err.message });
   }
 });

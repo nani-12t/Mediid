@@ -41,6 +41,9 @@ import PharmacyDashboard from './pages/pharmacy/Dashboard';
 import HospitalAnalytics from './pages/hospital/Analytics';
 import HospitalSettings from './pages/hospital/Settings';
 import HospitalQR from './pages/hospital/HospitalQR';
+import DoctorPortal from './pages/hospital/DoctorPortal';
+import PharmacyPortal from './pages/hospital/PharmacyPortal';
+import HospitalMarketplace from './pages/hospital/Marketplace';
 
 const ProtectedRoute = ({ children, roles }) => {
   const { user, loading } = useAuth();
@@ -93,7 +96,7 @@ function AppRoutes() {
       <Route path="/buyer/submissions/:id"  element={<ProtectedRoute roles={['buyer']}><ViewSubmissions /></ProtectedRoute>} />
       
       {/* Patient Chat */}
-      <Route path="/messages"               element={<ProtectedRoute roles={['patient', 'buyer']}><ChatPortal /></ProtectedRoute>} />
+      <Route path="/messages"               element={<ProtectedRoute roles={['patient', 'buyer', 'hospital_admin', 'doctor']}><ChatPortal /></ProtectedRoute>} />
 
       {/* Hospital Admin */}
       <Route path="/hospital"                element={<ProtectedRoute roles={['hospital_admin']}><HospitalDashboard /></ProtectedRoute>} />
@@ -103,6 +106,9 @@ function AppRoutes() {
       <Route path="/hospital/analytics"      element={<ProtectedRoute roles={['hospital_admin']}><HospitalAnalytics /></ProtectedRoute>} />
       <Route path="/hospital/qr"             element={<ProtectedRoute roles={['hospital_admin']}><HospitalQR /></ProtectedRoute>} />
       <Route path="/hospital/settings"       element={<ProtectedRoute roles={['hospital_admin']}><HospitalSettings /></ProtectedRoute>} />
+      <Route path="/hospital/doctor-portal"  element={<ProtectedRoute roles={['hospital_admin']}><DoctorPortal /></ProtectedRoute>} />
+      <Route path="/hospital/pharmacy-portal" element={<ProtectedRoute roles={['hospital_admin']}><PharmacyPortal /></ProtectedRoute>} />
+      <Route path="/hospital/marketplace"     element={<ProtectedRoute roles={['hospital_admin']}><HospitalMarketplace /></ProtectedRoute>} />
 
       {/* Doctor Portal */}
       <Route path="/doctor" element={<ProtectedRoute roles={['doctor', 'hospital_admin']}><DoctorDashboard /></ProtectedRoute>} />

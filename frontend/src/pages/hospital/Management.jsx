@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Phone, Mail, Edit2, Trash2, X, Star, QrCode, Download, Badge, Users, UserCheck, Pill, Shield } from 'lucide-react';
+import { Plus, Search, Phone, Mail, Edit2, Trash2, X, Star, QrCode, Download, Badge, Users, UserCheck, Pill } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import HospitalLayout from '../../components/common/HospitalLayout';
 import api, { doctorAPI, staffAPI, authAPI } from '../../utils/api';
@@ -44,8 +44,6 @@ export default function HospitalManagement() {
   
   /* ── Login Management States ── */
   const [showDocLoginModal, setShowDocLoginModal] = useState(null); // doctor object
-  const [showDocAccessModal, setShowDocAccessModal] = useState(false);
-  const [showPharmLoginModal, setShowPharmLoginModal] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
 
   /* ── Load Data ── */
@@ -156,7 +154,6 @@ export default function HospitalManagement() {
       await api.post(endpoint, payload);
       toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} login setup successful`);
       setShowDocLoginModal(null);
-      setShowPharmLoginModal(false);
       setLoginForm({ email: '', password: '' });
       if (type === 'doctor') loadDoctors();
     } catch (err) {
@@ -230,15 +227,6 @@ export default function HospitalManagement() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-secondary" onClick={() => setShowDocAccessModal(true)}>
-            <Shield size={16} /> Doctor Login
-          </button>
-          <button className="btn btn-secondary" onClick={() => { 
-            setLoginForm({ email: hospital?.contact?.email || '', password: '' }); 
-            setShowPharmLoginModal(true); 
-          }}>
-            <Pill size={16} /> Pharmacy Login
-          </button>
           <button className="btn btn-primary" onClick={activeTab === 'doctors' ? openAddDoc : () => setShowStaffModal(true)}>
             <Plus size={16} /> {activeTab === 'doctors' ? 'Add Doctor' : 'Recruit Staff'}
           </button>
@@ -424,60 +412,8 @@ export default function HospitalManagement() {
         </div>
       )}
 
-      {/* Doctor Access Modal */}
-      {showDocAccessModal && (
-        <div className="modal-overlay" onClick={() => setShowDocAccessModal(false)}>
-          <div className="modal" style={{ maxWidth: 440, textAlign: 'center', padding: '40px 32px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ width: 64, height: 64, background: 'var(--teal)', borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-              <Shield size={32} color="white" />
-            </div>
-            <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 12 }}>Doctor Portal Access</h2>
-            <p style={{ color: 'var(--gray-500)', fontSize: 15, lineHeight: 1.6, marginBottom: 32 }}>
-              Doctors can activate their professional accounts using their unique **HID** (Hospital ID) provided in the directory.
-            </p>
-            
-            <div style={{ background: '#f8fafc', borderRadius: 16, padding: 20, marginBottom: 32, textAlign: 'left' }}>
-              <h4 style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 12, textTransform: 'uppercase' }}>Steps for Doctors:</h4>
-              <ul style={{ paddingLeft: 20, fontSize: 14, color: '#64748b', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <li>Go to the **Doctor Activation** page.</li>
-                <li>Enter your **Hierarchical ID** (e.g. HID-XXXXXXXX-SRDOC-XXXX).</li>
-                <li>Set your professional email and password.</li>
-              </ul>
-            </div>
 
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button className="btn btn-secondary" onClick={() => setShowDocAccessModal(false)} style={{ flex: 1 }}>Close</button>
-              <button className="btn btn-primary" onClick={() => navigate('/doctor-activate')} style={{ flex: 1 }}>Go to Activation</button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Pharmacy Login Modal */}
-      {showPharmLoginModal && (
-        <div className="modal-overlay" onClick={() => setShowPharmLoginModal(false)}>
-          <div className="modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 20 }}>Pharmacy Login Setup</h2>
-            <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 20 }}>Setup the single master credential for the Hospital Pharmacy Portal.</p>
-            <form onSubmit={(e) => handleLoginSetup(e, 'pharmacy')}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)', display: 'block', marginBottom: 4 }}>Pharmacy Login ID (Email)</label>
-                  <input className="form-input" type="email" placeholder="pharmacy@hospital.com" value={loginForm.email} onChange={e=>setLoginForm({...loginForm, email: e.target.value})} required />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)', display: 'block', marginBottom: 4 }}>Password</label>
-                  <input className="form-input" type="password" placeholder="Min 6 characters" value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} required />
-                </div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowPharmLoginModal(false)} style={{ flex: 1 }}>Cancel</button>
-                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{loading ? 'Setting up...' : 'Setup Login'}</button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
     </HospitalLayout>
   );

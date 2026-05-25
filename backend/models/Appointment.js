@@ -11,13 +11,22 @@ const appointmentSchema = new mongoose.Schema({
 
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'completed', 'cancelled', 'rescheduled'],
+    enum: [
+      'pending', 'PENDING',
+      'reminder_sent', 'REMINDER_SENT',
+      'confirmed', 'CONFIRMED',
+      'checked_in', 'CHECKED_IN',
+      'completed', 'COMPLETED',
+      'expired', 'EXPIRED',
+      'cancelled', 'CANCELLED',
+      'rescheduled', 'RESCHEDULED'
+    ],
     default: 'pending'
   },
 
   type: {
     type: String,
-    enum: ['consultation', 'follow_up', 'emergency', 'procedure'],
+    enum: ['consultation', 'follow_up', 'emergency', 'procedure', 'video', 'teleconsultation'],
     default: 'consultation'
   },
 
@@ -49,6 +58,8 @@ const appointmentSchema = new mongoose.Schema({
   // ── Confirmation timestamps ────────────────────────────
   confirmedAt:        Date,
   confirmationMethod: String,   // 'patient_sms' | 'hospital_admin'
+  confirmationTime:   Date,
+  consultationSessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'ConsultationSession' },
 
   // ── Post-visit ─────────────────────────────────────────
   prescription: { uploadedAt: Date, fileUrl: String, notes: String },

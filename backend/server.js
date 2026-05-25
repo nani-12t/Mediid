@@ -91,8 +91,16 @@ app.get('/api/seed', async (req, res) => {
 const seedData = require('./seed');
 const User = require('./models/User');
 
+const http = require('http');
+const server = http.createServer(app);
+const { initSocket } = require('./utils/socket');
+initSocket(server);
+
+const { initScheduler } = require('./utils/scheduler');
+initScheduler();
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 MediID Server running on port ${PORT}`);
 });
 

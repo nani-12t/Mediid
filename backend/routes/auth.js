@@ -24,7 +24,7 @@ const generateToken = (id) =>
 router.post('/register', [
   body('email').isEmail().withMessage('Valid email is required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  body('role').isIn(['patient', 'hospital_admin', 'buyer']).withMessage('Role must be patient, hospital_admin, or buyer'),
+  body('role').isIn(['patient', 'hospital_admin', 'buyer', 'doctor']).withMessage('Invalid role'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -90,6 +90,38 @@ router.post('/register', [
       });
       console.log(`✅ Buyer profile created: ${buyer._id}`);
       profile = { id: buyer._id, companyName: buyer.companyName };
+
+    } else if (role === 'doctor') {
+      // Self-registered doctor — creates a pending profile without hospital linkage
+      // Hospital admin later links them or they use DoctorActivation with a hospital UID
+      const { specialization, qualifications, registrationNumber: medRegNo, phone: docPhone } = req.body;
+
+      // We need a dummy hospital reference — use a placeholder ObjectId
+      // The doctor account will be in 'pending_approval' state
+      const Hospital = require('../models/Hospital');
+      const anyHospital = await Hospital.findOne();
+
+      if (!anyHospital) {
+        // Clean up user if no hospital exists yet
+        await User.deleteOne({ _id: user._id });
+        return res.status(400).json({ message: 'No hospitals registered yet. Please contact a hospital admin to add you to their system.' });
+      }
+
+      const doctorProfile = await Doctor.create({
+        user:               user._id,
+        hospital:           anyHospital._id, // placeholder — to be re-assigned by admin
+        firstName:          (firstName || '').trim(),
+        lastName:           (lastName  || '').trim(),
+        email,
+        phone:              docPhone || phone || '',
+        specialization:     specialization || 'General Medicine',
+        qualifications:     qualifications ? qualifications.split(',').map(q => q.trim()) : ['MBBS'],
+        registrationNumber: medRegNo || '',
+        status:             'offline',  // awaiting linkage
+        isActive:           false,      // requires admin approval
+      });
+      console.log(`✅ Doctor self-registered (pending): ${doctorProfile._id}`);
+      profile = { id: doctorProfile._id, firstName: doctorProfile.firstName, lastName: doctorProfile.lastName, status: 'pending_approval' };
     }
 
     const token = generateToken(user._id);
@@ -129,8 +161,8 @@ router.post('/doctor-activate', async (req, res) => {
       return res.status(400).json({ message: 'This professional account has already been activated. Please login.' });
     }
 
-    // Create User with UID as the identifier
-    const user = await User.create({ uid, password, role: 'doctor' });
+    // Create User with UID and email
+    const user = await User.create({ uid, email: doctor.email, password, role: 'doctor' });
     
     // Link to doctor profile
     doctor.user = user._id;

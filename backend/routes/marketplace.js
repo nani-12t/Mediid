@@ -7,6 +7,7 @@ const Buyer       = require('../models/marketplace/Buyer');
 const Requirement = require('../models/marketplace/Requirement');
 const Submission  = require('../models/marketplace/Submission');
 const Message     = require('../models/marketplace/Message');
+const User        = require('../models/User');
 
 // Multer for in-memory file handling (base64 storage for simplicity)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -211,7 +212,23 @@ router.get('/messages/conversations', protect, async (req, res) => {
       }
     });
 
-    res.json(Object.values(conversationsMap));
+    const conversations = Object.values(conversationsMap);
+    
+    // Enrich with other user details (email and role)
+    const userIds = conversations.map(c => c.otherUserId);
+    const users = await User.find({ _id: { $in: userIds } }).select('email role');
+    const usersMap = {};
+    users.forEach(u => {
+      usersMap[u._id.toString()] = u;
+    });
+
+    const enrichedConversations = conversations.map(c => ({
+      ...c,
+      otherUserEmail: usersMap[c.otherUserId]?.email || 'User',
+      otherUserRole: usersMap[c.otherUserId]?.role || ''
+    }));
+
+    res.json(enrichedConversations);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 

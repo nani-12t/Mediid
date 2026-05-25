@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Shield, Home, Users, Calendar, Search, CreditCard, LogOut, Menu, X, Bell, FileText, Package } from 'lucide-react';
+import { Shield, Home, Users, Calendar, Search, CreditCard, LogOut, Menu, X, Bell, FileText, Package, Database, MessageSquare } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
@@ -10,6 +10,8 @@ const navItems = [
   { to: '/history', icon: FileText, label: 'Medical History' },
   { to: '/medicines', icon: Package, label: 'Buy Medicines' },
   { to: '/bills', icon: CreditCard, label: 'Bills & Expenses' },
+  { to: '/marketplace', icon: Database, label: 'Data Marketplace' },
+  { to: '/messages', icon: MessageSquare, label: 'Messages' },
   { to: '/profile', icon: Users, label: 'My Profile' },
 ];
 
