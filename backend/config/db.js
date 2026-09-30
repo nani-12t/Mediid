@@ -1,11 +1,14 @@
 const mongoose = require('mongoose');
 const dns = require('dns');
 
-// 🔧 Fix for querySrv ECONNREFUSED on some networks (like Jio)
-try {
-    dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
-} catch (e) {
-    console.warn('⚠️ Manual DNS override failed, relying on system defaults.');
+const uri = process.env.MONGO_URI || '';
+// 🔧 Fix for querySrv ECONNREFUSED on some networks (like Jio) for MongoDB Atlas (SRV) connections
+if (uri.startsWith('mongodb+srv://')) {
+    try {
+        dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+    } catch (e) {
+        console.warn('⚠️ Manual DNS override failed, relying on system defaults.');
+    }
 }
 
 // Global reference for secondary connection
@@ -18,7 +21,7 @@ const connectDB = async () => {
 
     try {
         const conn = await mongoose.connect(process.env.MONGO_URI, {
-            serverSelectionTimeoutMS: 5000, 
+            serverSelectionTimeoutMS: 10000, 
             socketTimeoutMS: 45000,
             family: 4,
         });
@@ -26,6 +29,7 @@ const connectDB = async () => {
         return conn.connection;
     } catch (error) {
         console.error(`❌ Primary MongoDB Connection Error: ${error.message}`);
+        console.error(`💡 Tip: If running locally, ensure the MongoDB Windows service is active (run: net start MongoDB).`);
         throw error;
     }
 };
