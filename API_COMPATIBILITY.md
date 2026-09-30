@@ -1,8 +1,8 @@
-# MEDIID API Compatibility Audit
+# MEDIID API Compatibility Audit (Frozen)
 
 ## 1. Overview & Compatibility Contract
 
-To ensure that the React frontend continues operating without breaking during and after the PostgreSQL migration:
+To ensure that the existing React frontend continues operating seamlessly during and after the PostgreSQL migration:
 1. **Endpoint URLs must NOT change** (e.g., `/api/auth/login`, `/api/patients/profile`, `/api/appointments`).
 2. **HTTP Request bodies must be accepted in their current structure**.
 3. **HTTP Response shapes must preserve legacy JSON keys**, even if PostgreSQL normalizes the underlying data into separate relational tables.
@@ -51,11 +51,17 @@ To ensure that the React frontend continues operating without breaking during an
 When the frontend queries `GET /api/patients/profile`, it expects the nested arrays `documents`, `bills`, `medicalBenefits`, and `medicalHistory` on the root JSON object.
 
 ### The Service-Level Presentation DTO
-Rather than returning raw relational rows, the `patient.service.js` will assemble the response using a presentation adapter:
+Rather than returning raw relational rows, the `patient.service.ts` will assemble the response using a presentation adapter:
 
-```javascript
-// Example in src/modules/patients/patient.mapper.js
-export function toPatientDTO(patientRecord, documents, bills, benefits, encounters) {
+```typescript
+// Example in src/shared/mappers/patient.mapper.ts
+export function toLegacyPatientDTO(
+  patientRecord: any,
+  documents: any[] = [],
+  bills: any[] = [],
+  benefits: any[] = [],
+  encounters: any[] = []
+) {
   return {
     _id: patientRecord.id,
     id: patientRecord.id,
@@ -74,7 +80,7 @@ export function toPatientDTO(patientRecord, documents, bills, benefits, encounte
       country: patientRecord.country
     },
     emergency: {
-      bloodGroup: patientRecord.bloodGroup,
+      bloodGroup: patientRecord.bloodGroup ? patientRecord.bloodGroup.replace('_POS', '+').replace('_NEG', '-') : null,
       organDonor: patientRecord.organDonor,
       emergencyContactName: patientRecord.emergencyContactName,
       emergencyContactPhone: patientRecord.emergencyContactPhone,
@@ -121,10 +127,10 @@ export function toPatientDTO(patientRecord, documents, bills, benefits, encounte
     medicalHistory: encounters.map(e => ({
       date: e.startTime,
       diagnosis: e.chiefComplaint,
-      treatment: e.notes?.[0]?.assessment || '',
+      treatment: e.clinicalNotes?.[0]?.assessment || '',
       hospital: e.hospital?.name || '',
       doctor: e.doctor ? `Dr. ${e.doctor.firstName} ${e.doctor.lastName}` : '',
-      notes: e.notes?.[0]?.plan || ''
+      notes: e.clinicalNotes?.[0]?.plan || ''
     }))
   };
 }

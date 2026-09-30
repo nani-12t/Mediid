@@ -180,7 +180,7 @@ frontend/src/
 * **Purpose**: Physician profile, hospital association, consultation schedule, and credentials.
 * **Fields**:
   - `user`: ObjectId, ref: `User` (optional initially until activated).
-  - `hospital`: ObjectId, ref: `Hospital`, required.
+  - `hospital`: ObjectId, ref: `Hospital`, required in current MongoDB schema.
   - `uid`: String, unique (e.g., `HID-C4E1A2B3-DOC-0001`).
   - `qrCode`: String (base64 data URL).
   - `firstName`, `lastName`: String, required.

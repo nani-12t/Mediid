@@ -1,10 +1,9 @@
-const dotenv = require('dotenv');
-dotenv.config();
-
 const express = require('express');
 const cors = require('cors');
+const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const { connectDB, getMarketplaceConn } = require('./config/db');
+dotenv.config();
 
 const app = express();
 

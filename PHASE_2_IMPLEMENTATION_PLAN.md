@@ -1,100 +1,166 @@
-# MEDIID Phase 2 Ordered Implementation Plan
+# MEDIID Phase 2 Ordered Implementation Plan (Frozen)
 
-This implementation plan breaks the entire migration into bite-sized, independently testable tasks. No step alters frontend contracts or destroys legacy databases.
-
----
-
-## Phase 2.1: PostgreSQL & Modern ORM Infrastructure Setup
-- **Goal**: Establish the PostgreSQL connection pool, migration framework, and ORM schemas.
-- **Tasks**:
-  1. Add PostgreSQL dependencies (`pg`, chosen ORM `drizzle-orm` / `prisma`, `dotenv`).
-  2. Configure connection pooling and SSL options in `src/config/database.js`.
-  3. Define SQL migration pipeline (or Drizzle Kit / Prisma Migrate).
-  4. Write automated health check query to ensure PostgreSQL connection vitality.
+This implementation plan details the sequential tasks for the Phase 2 implementation. Each task is self-contained, testable, and gated by explicit verification requirements before proceeding.
 
 ---
 
-## Phase 2.2: User & Authentication Identity Module
-- **Goal**: Migrate the base `users` table and decouple auth logic into a clean module.
-- **Tasks**:
-  1. Create schema definition for `users`.
-  2. Implement `auth.repository.js` and `auth.service.js`.
-  3. Support dual-read password authentication (verify against PostgreSQL, fallback to Mongo if not yet migrated).
-  4. Write unit tests for JWT issuance, role checking, and password hashing.
+## Verification Pipeline (Gating Criteria for Every Step)
+No step is marked complete until it passes the following 5-point verification pipeline:
+```
+1. Implement (Write code / TypeScript module / Prisma migration)
+   ↓
+2. Unit Tests (Verify pure domain logic and validation schemas)
+   ↓
+3. Integration Tests (Verify database transactions and relation integrity)
+   ↓
+4. API Contract Verification (Verify legacy JSON responses match React frontend expectations)
+   ↓
+5. Data Integrity Verification (Verify constraints, foreign keys, and indexes)
+   ↓
+Proceed to next step
+```
 
 ---
 
-## Phase 2.3: Organization, Hospital & Practitioner Hierarchy
-- **Goal**: Implement hospitals, doctors, staff, and slots in PostgreSQL.
+## Phase 2.1: PostgreSQL, Prisma & TypeScript Infrastructure Setup
+- **Objective**: Establish the core PostgreSQL connection pool, Prisma client singleton, and incremental TypeScript build environment.
 - **Tasks**:
-  1. Define DDL and ORM schemas for `hospitals`, `doctors`, `doctor_slots`, `hospital_memberships`, and `pharmacies`.
-  2. Implement atomic sequence generation for hierarchical UIDs (`doctorSequence`, `staffSequence`).
-  3. Migrate `/api/hospitals`, `/api/doctors`, and `/api/staff` to read/write from PostgreSQL.
-  4. Validate doctor slot search endpoint `/api/doctor-portal/slots/available`.
+  1. Add dependencies: `@prisma/client`, `prisma`, `pg`, `uuid`, `uuidv7`, `typescript`, `@types/node`, `@types/express`.
+  2. Configure `tsconfig.json` with `allowJs: true` to support incremental TypeScript adoption alongside existing CommonJS files.
+  3. Initialize Prisma configuration (`prisma/schema.prisma`) and run initial test migration against local/development PostgreSQL.
+  4. Implement `src/config/database.ts` with graceful connection handling and lifecycle hooks.
+- **Verification Gate**:
+  - `npx prisma validate` passes with zero errors.
+  - Automated health check query executes `SELECT 1` via Prisma.
 
 ---
 
-## Phase 2.4: Patient Demographics & Profile Management
-- **Goal**: Implement `patients` table and normalize benefits and documents.
+## Phase 2.2: User Identity & Authentication Module
+- **Objective**: Migrate the `users` table and implement the modular `auth` domain in TypeScript.
 - **Tasks**:
-  1. Define DDL for `patients`, `patient_benefits`, and `medical_documents`.
-  2. Implement `patient.mapper.js` DTO adapter to return the exact nested JSON structure expected by `frontend/src/pages/patient/Profile.jsx`.
-  3. Implement CRUD operations for patient benefits and document metadata.
-  4. Test public emergency QR scan endpoint `/api/patients/scan/:uid`.
+  1. Implement `src/modules/auth/auth.repository.ts` and `src/modules/auth/auth.service.ts` using Prisma.
+  2. Implement `POST /api/auth/register` supporting `patient`, `hospital_admin`, `doctor`, and `buyer`.
+  3. Implement `POST /api/auth/login` with bcrypt verification and JWT generation.
+  4. Implement `POST /api/auth/doctor-activate` for doctor account setup via hierarchical UID.
+  5. Implement `POST /api/auth/forgot-password` and `POST /api/auth/reset-password` (OTP flows).
+- **Verification Gate**:
+  - Unit test password hashing and JWT issuance.
+  - Integration test login with existing seed credentials.
+  - Verify response shape matches `{ token, user: { id, email, role }, profile }`.
 
 ---
 
-## Phase 2.5: Appointments, Consultation Sessions & Notification Queues
-- **Goal**: Migrate appointment scheduling, time-slots, and SMS confirmation links.
+## Phase 2.3: Healthcare Organizations & Practitioner Hierarchy
+- **Objective**: Implement hospitals, private clinic doctors, staff roster, and doctor availability slots.
 - **Tasks**:
-  1. Define DDL for `appointments` and `consultation_sessions`.
-  2. Migrate `/api/appointments` booking flow and Twilio dispatch logic.
-  3. Migrate `/api/appointments/confirm/:token` to activate sessions in PostgreSQL.
-  4. Connect BullMQ/Redis scheduler to poll and update expired appointments.
+  1. Implement `hospitals` module with atomic sequence counters for `doctorSequence` and `staffSequence`.
+  2. Implement `doctors` module supporting both hospital-affiliated and independent private clinic doctors (`isPrivatePractice = true`).
+  3. Implement `doctor_hospital_memberships` table for multi-hospital affiliations.
+  4. Implement `hospital_memberships` (staff) module and recruitment endpoints.
+  5. Implement `doctor_slots` module supporting one-off dates and weekly recurring schedules.
+- **Verification Gate**:
+  - Hospital recruitment triggers generation of hierarchical UIDs (`HID-XXXXXXXX-DOC-0001`).
+  - Public search `/api/doctors` and `/api/hospitals` returns weighted rating scores correctly.
+  - Slot availability endpoint `/api/doctor-portal/slots/available` accurately calculates booked vs remaining capacity.
 
 ---
 
-## Phase 2.6: Longitudinal EHR & Clinical Workbench
-- **Goal**: Decompose medical history into encounters, vitals, clinical notes, and prescriptions.
+## Phase 2.4: Patient Longitudinal Demographics & Benefits
+- **Objective**: Implement patient profile, emergency card, benefits, and trusted provider relationships.
 - **Tasks**:
-  1. Create tables for `encounters`, `vitals`, `clinical_notes`, `conditions`, `allergies`, `prescriptions`, and `prescription_items`.
-  2. Update `/api/doctor-portal/queue` and `/api/doctor-portal/patient/:uid` to pull from relational clinical tables.
-  3. Implement `/api/doctor-portal/prescription` to insert atomic rows into `prescriptions` and `prescription_items`.
-  4. Implement `/api/pharmacy-portal/dispense` to read prescriptions and record dispensation.
+  1. Implement `patients` module with `generatePatientUID()` generator (`MID-XXXXXXXX`).
+  2. Implement `patient_benefits` module handling government, employer, and personal insurance policies.
+  3. Implement `toLegacyPatientDTO` presentation adapter in `src/shared/mappers/patient.mapper.ts`.
+  4. Wire `GET /api/patients/profile`, `PUT /api/patients/profile`, and public emergency scan `GET /api/patients/scan/:uid`.
+- **Verification Gate**:
+  - Emergency card returns exact required blood group and contact details.
+  - `GET /api/patients/profile` returns legacy nested structure (`medicalBenefits`, `documents`, `bills`, `medicalHistory`).
 
 ---
 
-## Phase 2.7: Unified Billing & Financial Invoicing
-- **Goal**: Unify appointment fees, diagnostic bills, and pharmacy checkout into `billing_records`.
+## Phase 2.5: Appointments, Consultation Windows & Scheduler
+- **Objective**: Implement appointment booking, SMS confirmation links, consultation access sessions, and background reminders.
 - **Tasks**:
-  1. Create `billing_records` table with status tracking (`pending`, `paid`, `insurance_claimed`).
-  2. Wire `/api/patients/bills` to return unified invoices from both appointments and custom bills.
-  3. Support `/api/patients/bills/:billId/pay` with transaction-safe payment confirmation.
+  1. Implement `appointments` module (`POST /api/appointments`, `GET /api/appointments/my`, `GET /api/appointments/hospital`).
+  2. Implement SMS confirmation endpoint `GET /api/appointments/confirm/:token` creating an active `consultation_sessions` record.
+  3. Connect BullMQ/Redis scheduler to poll and update expired appointments and consultation windows.
+- **Verification Gate**:
+  - Tapping confirm link activates consultation session valid from (Appointment Start - 10min) to (+2 hours).
+  - Status transitions (`pending` -> `confirmed` -> `completed`) execute atomically.
 
 ---
 
-## Phase 2.8: Data Marketplace & Research Portal
-- **Goal**: Migrate secondary MongoDB marketplace collections into primary PostgreSQL schema.
+## Phase 2.6: Encounter-Centered Longitudinal Clinical Records
+- **Objective**: Migrate medical history into longitudinal encounters, SOAP notes, vitals, conditions, and prescriptions.
 - **Tasks**:
-  1. Create tables for `buyers`, `research_requirements`, `dataset_submissions`, and `marketplace_messages`.
-  2. Implement marketplace routes (`/api/marketplace/*`).
-  3. Wire WebSocket/Socket.IO message relays to persist chat into `marketplace_messages`.
+  1. Implement `encounters` module linking appointments to clinical care visits.
+  2. Implement `vitals`, `clinical_notes`, and `conditions` recording.
+  3. Implement `prescriptions` and `prescription_items` schema and endpoints.
+  4. Implement `doctorPortal.ts` queue and patient EHR access guard checking active consultation sessions.
+- **Verification Gate**:
+  - Doctor with active session can fetch patient profile and submit prescriptions.
+  - Doctor without active session receives HTTP 403 with detailed reason.
+  - Prescriptions issue structured items that sync to the patient's medical history.
 
 ---
 
-## Phase 2.9: Data Extraction & Deterministic Migration Runner
-- **Goal**: Extract all historical MongoDB data, normalize, and load into PostgreSQL.
+## Phase 2.7: Hospital Pharmacy & Dispensing Workbench
+- **Objective**: Implement hospital pharmacy lookup, medication checkout, and inventory decrement.
 - **Tasks**:
-  1. Write idempotent migration script (`scripts/migrate-mongo-to-postgres.js`).
-  2. Execute deterministic UUIDv5 transformation for all ObjectIds.
-  3. Run comprehensive data integrity, foreign key constraint, and checksum verifications.
+  1. Implement `pharmacies` module linking pharmacy users to hospitals.
+  2. Implement `GET /api/pharmacy-portal/prescription/:uid` filtering prescriptions from the current hospital.
+  3. Implement `POST /api/pharmacy-portal/dispense` recording `pharmacy_dispenses` and auto-generating a paid bill.
+- **Verification Gate**:
+  - Pharmacist can dispense medications against prescriptions.
+  - Dispensing records append a note to the clinical record and generate an invoice.
 
 ---
 
-## Phase 2.10: Shadow Execution & Production Cutover
-- **Goal**: Verify live production workload and switch traffic.
+## Phase 2.8: Unified Invoicing & Financial Records
+- **Objective**: Consolidate consultation fees, pharmacy bills, and custom diagnostic expenses into `billing_records`.
 - **Tasks**:
-  1. Enable Dual-Write / Shadow-Read mode in staging environment.
-  2. Monitor performance, latency, and index efficiency.
-  3. Flip primary switch to PostgreSQL.
-  4. Retain MongoDB in read-only standby mode for 14-day rollback safety window.
+  1. Implement `billing` module managing `billing_records`.
+  2. Wire `GET /api/patients/bills` unifying appointment fee records and custom lab bills.
+  3. Implement `PUT /api/patients/bills/:billId/pay` with transaction-safe payment confirmation.
+- **Verification Gate**:
+  - Unified bills list displays all patient expenses sorted chronologically.
+  - Payment updates bill status and records payment method and timestamp.
+
+---
+
+## Phase 2.9: Air-Gapped Research Data Marketplace
+- **Objective**: Migrate secondary MongoDB marketplace collections into isolated PostgreSQL tables.
+- **Tasks**:
+  1. Implement `buyers`, `research_requirements`, `dataset_submissions`, and `submission_documents`.
+  2. Implement `marketplace_messages` and Socket.IO real-time event broadcasting.
+  3. Wire buyer dashboard and requirement creation routes.
+- **Verification Gate**:
+  - Buyers cannot access unsubmitted patient records.
+  - Real-time chat messages persist to `marketplace_messages` with unread counts.
+
+---
+
+## Phase 2.10: Migration Script & Deterministic Data Backfill
+- **Objective**: Execute historical backfill from MongoDB to PostgreSQL using UUIDv5.
+- **Tasks**:
+  1. Implement `scripts/migrate-mongo-to-postgres.ts`.
+  2. Map all MongoDB ObjectIds to PostgreSQL UUIDs via `uuidv5(objectId, MEDIID_NAMESPACE)`.
+  3. Decompose and normalize `Patient` documents into `patients`, `patient_benefits`, `medical_documents`, `encounters`, and `conditions`.
+  4. Run automated checksums comparing MongoDB document counts against PostgreSQL row counts.
+- **Verification Gate**:
+  - 100% of Users, Patients, Hospitals, Doctors, Appointments, and Marketplace records migrated.
+  - Zero broken foreign-key constraints.
+
+---
+
+## Phase 2.11: Dual-Write Outbox Synchronization & Production Cutover
+- **Objective**: Run live shadow dual-writes, verify data parity, and execute final cutover.
+- **Tasks**:
+  1. Implement transactional Outbox pattern in mutation routes.
+  2. Run BullMQ worker synchronizing writes to PostgreSQL.
+  3. Perform read-shadowing to verify identical API responses.
+  4. Execute final cutover, switching primary database connection to PostgreSQL.
+  5. Retain MongoDB in read-only standby mode for 14-day rollback window.
+- **Verification Gate**:
+  - Zero data divergence detected over 48 hours of shadow execution.
+  - Flawless switchover with zero frontend downtime.

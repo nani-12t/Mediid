@@ -1,162 +1,136 @@
-# MEDIID Database Migration Plan: MongoDB to PostgreSQL
+# MEDIID Database Migration Plan: MongoDB to PostgreSQL (Frozen)
 
-## 1. Migration Strategy & Core Requirements
+## 1. Primary Identifier & Extension Strategy
 
-The database migration from MongoDB to PostgreSQL must occur with **zero data loss**, **preserved API contracts for the frontend**, and an **unbroken audit trail**.
-
-### Key Rules:
-1. **Preserve User-Facing Identifiers**: The public `uid` strings (`MID-XXXXXXXX`, `HID-XXXXXXXX`, `HID-...-DOC-0001`) must remain identical before and after migration. QR codes and SMS confirmation links must not break.
-2. **Deterministic Primary Key Mapping**: Every 24-character hexadecimal MongoDB `ObjectId` must be converted to a deterministic UUID or mapped via a persistent migration lookup table.
-3. **Array Normalization**: All denormalized arrays in `Patient.js` (`documents`, `bills`, `medicalBenefits`, `medicalHistory`) and `Appointment.js` must be extracted into their respective normalized relational tables.
-4. **Zero Frontend Disruption**: During transitional phases, endpoints accept and return identical JSON shapes even if backed by PostgreSQL joins.
-
----
-
-## 2. Primary ID Strategy: UUIDv7 vs UUIDv4 vs BIGINT
-
-### Recommendation: **UUIDv7 (or UUIDv4 with deterministic ObjectId mapping)**
-
-| Identifier Type | Distributed Friendly | API Exposure Safety | Indexing & B-Tree Locality | Long-Term Scalability | Decision |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **BIGINT Identity** | ❌ Requires central sequence | ❌ Vulnerable to enumeration attacks | ⭐ Excellent (Sequential) | ⚠️ Sequence exhaustion / sharding friction | Not recommended for healthcare APIs |
-| **UUIDv4** | ⭐ Fully distributed | ⭐ Opaque & secure | ❌ Poor cache locality (Random insertion) | ⭐ Infinite space | Acceptable, but causes index fragmentation |
-| **UUIDv7** | ⭐ Fully distributed | ⭐ Opaque & secure | ⭐ Time-ordered prefix (Great index performance) | ⭐ Infinite space | **RECOMMENDED FOR ALL NEW TABLES** |
-
-### MongoDB ObjectId to UUID Mapping Strategy
-To migrate existing MongoDB collections into PostgreSQL without breaking foreign key references:
-- A MongoDB `ObjectId` consists of 12 bytes (24 hex characters):
-  `[ 4 bytes timestamp | 5 bytes random | 3 bytes counter ]`
-- In PostgreSQL, UUID is 16 bytes (32 hex characters).
-- We generate a deterministic UUIDv5 (namespaced SHA-1) using a fixed MEDIID namespace:
-  $$\text{UUID} = \text{uuidv5}(\text{objectId.toString()}, \text{MEDIID\_NAMESPACE})$$
-- This ensures that re-running the migration script produces the exact same primary and foreign keys every single time without requiring stateful ID translation lookups.
-
----
-
-## 3. Data Transformation & Normalization Map
-
-### 1. `users` Table
-| MongoDB Field (`User`) | PostgreSQL Field (`users`) | Transformation Logic |
-| :--- | :--- | :--- |
-| `_id` | `id` | `uuidv5(user._id.toString())` |
-| `email` | `email` | Lowercased, trimmed string |
-| `uid` | `uid` | String (used by doctors/patients) |
-| `password` | `password_hash` | Raw bcrypt hash transferred verbatim |
-| `role` | `role` | Transferred verbatim |
-| `isActive` | `is_active` | Boolean |
-| `resetPasswordToken` | `reset_password_token` | String |
-| `resetPasswordExpire` | `reset_password_expires_at` | Timestamp with timezone |
-| `lastLogin` | `last_login_at` | Timestamp with timezone |
-| `createdAt` | `created_at` | Timestamp with timezone |
-
-### 2. `patients` & Relational Decomposition
-A single document in `Patient` maps into 6 PostgreSQL tables:
-
-```
-MongoDB Patient Document
-  ├── Root Document            ──> patients table (demographics, emergency, address)
-  ├── patient.documents[]      ──> medical_documents table
-  ├── patient.bills[]          ──> billing_records table
-  ├── patient.medicalBenefits[]──> patient_benefits table
-  ├── patient.medicalHistory[] ──> encounters + clinical_notes + conditions tables
-  └── patient.trustedDoctors[] ──> patient_trusted_providers table
-```
-
-#### Field Extraction: `Patient.medicalHistory` -> `encounters` & `conditions`
-```javascript
-// Transform embedded medical history into longitudinal encounter
-for (const entry of patient.medicalHistory) {
-  const encounterId = uuidv5(`${patient._id}_history_${entry.date}`, NAMESPACE);
+### 1.1 Existing MongoDB Records (Deterministic UUIDv5)
+Every MongoDB collection row has an `_id` represented as a 24-character hexadecimal `ObjectId`. To guarantee that migration scripts can be executed repeatedly with zero foreign-key divergence:
+- Convert every `ObjectId` using **UUIDv5** with a fixed namespace:
+  ```javascript
+  const { v5: uuidv5 } = require('uuid');
+  const MEDIID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Fixed RFC 4122 namespace
   
-  // 1. Insert Encounter
-  await db.insert('encounters').values({
-    id: encounterId,
-    patient_id: patientUuid,
-    encounter_type: 'ambulatory',
-    status: 'completed',
-    start_time: entry.date || new Date(),
-    chief_complaint: entry.diagnosis
-  });
-
-  // 2. Insert Clinical Note
-  await db.insert('clinical_notes').values({
-    id: uuidv5(`${encounterId}_note`, NAMESPACE),
-    encounter_id: encounterId,
-    author_id: systemAdminUserId,
-    note_type: 'consultation',
-    assessment: entry.treatment,
-    plan: entry.notes
-  });
-
-  // 3. Insert Diagnosed Condition
-  if (entry.diagnosis) {
-    await db.insert('conditions').values({
-      id: uuidv5(`${encounterId}_condition`, NAMESPACE),
-      patient_id: patientUuid,
-      encounter_id: encounterId,
-      display_name: entry.diagnosis,
-      clinical_status: 'resolved',
-      diagnosed_date: entry.date
-    });
+  function mongoIdToPostgresUuid(objectIdStr) {
+    return uuidv5(String(objectIdStr), MEDIID_NAMESPACE);
   }
-}
-```
+  ```
+- Any related document referencing that `ObjectId` will calculate the exact same UUID, ensuring foreign-key integrity without requiring stateful ID mapping tables.
 
-### 3. `appointments` Normalization
-| MongoDB Field (`Appointment`) | PostgreSQL Field (`appointments`) | Transformation |
+### 1.2 Newly Created PostgreSQL Records (UUIDv7)
+- After cutover, new rows generate sequential **UUIDv7** primary keys.
+- **Implementation**: Generated at the application layer using a dedicated library (e.g. `uuidv7` in npm) before passing records to Prisma `create` calls:
+  ```typescript
+  import { uuidv7 } from 'uuidv7';
+  
+  const newAppointmentId = uuidv7();
+  await prisma.appointment.create({
+    data: {
+      id: newAppointmentId,
+      ...appointmentData
+    }
+  });
+  ```
+- **PostgreSQL DDL**: Columns simply use standard `UUID PRIMARY KEY`. We do not rely on `gen_random_uuid()` for UUIDv7.
+
+### 1.3 Public Business Identifiers
+- `patients.uid` (`MID-XXXXXXXX`)
+- `hospitals.uid` (`HID-XXXXXXXX`)
+- `doctors.uid` (`HID-XXXXXXXX-DOC-0001` or `DOC-XXXXXXXX`)
+- `hospital_memberships.uid` (`HID-XXXXXXXX-STF-0001`)
+
+These public UIDs **remain 100% stable** and continue to be used in QR codes, badge scans, SMS links, and frontend routing.
+
+### 1.4 PostgreSQL Extensions
+- `vector`: Enabled via `CREATE EXTENSION IF NOT EXISTS vector;` for future pgvector document embeddings.
+- No obsolete `uuid-ossp` dependencies are required for primary key generation since UUIDs are provided by application services.
+
+---
+
+## 2. Relational Normalization & Transformation Map
+
+### 2.1 Patient Decomposition
+The embedded arrays on MongoDB's `Patient` are extracted into distinct relational tables:
+
+| MongoDB Source | PostgreSQL Target | Extraction & Mapping Strategy |
 | :--- | :--- | :--- |
-| `_id` | `id` | `uuidv5(apt._id.toString())` |
-| `patient` | `patient_id` | `uuidv5(apt.patient.toString())` |
-| `doctor` | `doctor_id` | `uuidv5(apt.doctor.toString())` |
-| `hospital` | `hospital_id` | `uuidv5(apt.hospital.toString())` |
-| `status` | `status` | Normalized to lowercase (`'CONFIRMED'` -> `'confirmed'`) |
-| `confirmToken` | `confirm_token` | Parsed to UUID |
-| `prescription` | Extracted | Inserted into `prescriptions` + `prescription_items` |
+| `Patient` (root document) | `patients` | Demographics, phone, address, emergency profile, UID, and user relation |
+| `Patient.documents[]` | `medical_documents` | Document type, file URL, metadata, uploaded by user ID |
+| `Patient.bills[]` | `billing_records` | Normalizes custom patient diagnostic bills (`billId` -> `bill_code`) |
+| `Patient.medicalBenefits[]` | `patient_benefits` | Government, employer, and personal insurance benefits |
+| `Patient.medicalHistory[]` | `encounters` + `clinical_notes` + `conditions` | Historical visits transformed into completed encounters with notes and diagnosed conditions |
+| `Patient.trustedDoctors[]` | `patient_trusted_doctors` | Many-to-many join rows |
+| `Patient.trustedHospitals[]` | `patient_trusted_hospitals`| Many-to-many join rows |
+
+### 2.2 Appointment & Prescription Normalization
+| MongoDB Source | PostgreSQL Target | Transformation Strategy |
+| :--- | :--- | :--- |
+| `Appointment` | `appointments` | Booking dates, time slots, status (normalized to lowercase enum), confirm tokens |
+| `Appointment.prescription` | `prescriptions` + `prescription_items` | Prescription text parsed/mapped into structured prescription rows |
+| `ConsultationSession` | `consultation_sessions` | Mapped 1:1 using UUIDv5 for access session tokens |
+
+### 2.3 Organization & Staff Normalization
+| MongoDB Source | PostgreSQL Target | Transformation Strategy |
+| :--- | :--- | :--- |
+| `Hospital` | `hospitals` | Facilities, bed counts, location, rating, and sequence counters |
+| `Doctor` | `doctors` + `doctor_hospital_memberships` | Doctor profile created; join row inserted linking doctor to hospital |
+| `Staff` | `hospital_memberships` | Non-physician hospital personnel |
+| `Pharmacy` | `pharmacies` | Hospital pharmacy profile |
+
+### 2.4 Marketplace Normalization
+| MongoDB Source (Secondary DB) | PostgreSQL Target | Transformation Strategy |
+| :--- | :--- | :--- |
+| `Buyer` | `buyers` | Company profile, contact, user reference |
+| `Requirement` | `research_requirements` | Research dataset specs, target sample size, pricing JSONB |
+| `Submission` | `dataset_submissions` + `submission_documents` | Patient submission with extracted child document rows |
+| `Message` | `marketplace_messages` | Chat messages between buyer and patient |
 
 ---
 
-## 4. Execution Sequence (Step-by-Step)
+## 3. Safe Cutover & Rollback Protocol (Multi-Stage Migration)
+
+Simply toggling a boolean flag (`USE_POSTGRES=false`) is unsafe once PostgreSQL begins receiving writes because MongoDB would be out of sync. We employ a controlled 7-stage cutover protocol:
 
 ```
-Step 1: PostgreSQL Infrastructure Provisioning
-  │
-Step 2: Execute DDL & Migrations (Create all tables, enums, triggers)
-  │
-Step 3: Run Deterministic Extraction Script (Read MongoDB collections)
-  │       ├── 1. Users
-  │       ├── 2. Hospitals & Pharmacies
-  │       ├── 3. Doctors & DoctorSlots
-  │       ├── 4. Hospital Memberships (Staff)
-  │       ├── 5. Patients & Emergency Contacts
-  │       ├── 6. Normalized Patient Sub-entities (Benefits, Documents, Bills)
-  │       ├── 7. Appointments & ConsultationSessions
-  │       ├── 8. Longitudinal Encounters, Vitals, Conditions, Prescriptions
-  │       └── 9. Marketplace Entities (Buyers, Requirements, Submissions, Messages)
-  │
-Step 4: Post-Migration Row Count & Checksum Verification
-  │
-Step 5: Dual-Read Shadow Mode (Verify query compatibility in Node.js)
-  │
-Step 6: Switch Primary Reads & Writes to PostgreSQL
-  │
-Step 7: Retain MongoDB in Read-Only Mode for 14-day Rollback Window
+[ STAGE A: Provision & Baseline ]
+  ├── PostgreSQL database provisioned with Prisma schema
+  └── MongoDB running as primary read/write database
+        │
+        ▼
+[ STAGE B: Historical Backfill ]
+  ├── Idempotent batch extraction script runs (MongoDB -> PostgreSQL)
+  └── Transforms ObjectIds -> UUIDv5, normalizes embedded arrays
+        │
+        ▼
+[ STAGE C: Shadow Read Verification ]
+  ├── Express routes query PostgreSQL in parallel on read operations
+  └── Discrepancy detector logs any mismatch between MongoDB and PostgreSQL
+        │
+        ▼
+[ STAGE D: Controlled Dual-Write via Outbox ]
+  ├── All mutation routes write to MongoDB (primary) and an Outbox queue
+  └── BullMQ worker applies writes to PostgreSQL with retry and idempotency
+        │
+        ▼
+[ STAGE E: Consistency Verification ]
+  ├── Automated audit script verifies row counts, sums, and foreign keys
+  └── Sign-off on data parity
+        │
+        ▼
+[ STAGE F: Production Cutover ]
+  ├── Maintenance window (brief 5-minute read-only freeze)
+  ├── Drain remaining outbox messages to PostgreSQL
+  └── Switch Express primary database connection to PostgreSQL (Prisma)
+        │
+        ▼
+[ STAGE G: Standby Rollback Window (14 Days) ]
+  ├── PostgreSQL is primary for all reads and writes
+  └── MongoDB kept read-only as an immutable point-in-time disaster archive
 ```
 
 ---
 
-## 5. Post-Migration Verification & Rollback Strategy
-
-### Checksum & Verification Script
-A dedicated test runner runs post-migration queries to verify:
-1. `COUNT(users.id)` in PostgreSQL matches `db.users.countDocuments()` in MongoDB.
-2. `COUNT(patients.id)` matches `db.patients.countDocuments()`.
-3. Total sum of `patient.bills.amount` matches `SUM(billing_records.amount)`.
-4. Doctor login via bcrypt hash verification completes with existing passwords.
-5. All public UIDs match 100%.
-
-### Rollback Strategy
-1. **MongoDB is NOT deleted or mutated during Phase 2**.
-2. Both databases can run with a feature flag: `USE_POSTGRES=true/false`.
-3. If critical defects emerge in PostgreSQL during initial rollout:
-   - Toggle `USE_POSTGRES=false` in `.env`.
-   - Node Express immediately directs traffic back to Mongoose without requiring frontend updates or redeployments.
+## 4. Dual-Write Failure Handling & Idempotency
+During Stage D:
+1. **Outbox Pattern**: Mutation endpoints write to MongoDB and record an event payload in an Outbox collection within the same transaction.
+2. **Worker Synchronization**: A BullMQ worker consumes outbox events and executes the corresponding Prisma write.
+3. **Idempotency**: All PostgreSQL writes use `upsert` keyed on the deterministic UUIDv5, preventing duplicate record creation on worker retries.
+4. **Failure Alerting**: If a synchronization event fails after 5 retries, it is placed in a dead-letter queue (DLQ) with an immediate administrator alert.
