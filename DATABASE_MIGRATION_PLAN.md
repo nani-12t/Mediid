@@ -4,13 +4,22 @@
 
 ### 1.1 Existing MongoDB Records (Deterministic UUIDv5)
 Every MongoDB collection row has an `_id` represented as a 24-character hexadecimal `ObjectId`. To guarantee that migration scripts can be executed repeatedly with zero foreign-key divergence:
-- Convert every `ObjectId` using **UUIDv5** with a fixed namespace:
+
+**MEDIID Migration Namespace (FROZEN — Phase 1.2):**
+
+> **MEDIID_MIGRATION_NAMESPACE = `57c0c744-9cdc-41f9-a532-7e60be63d87f`**
+>
+> This value is permanently frozen and MUST NOT change after Phase 2 begins.
+> It is a MEDIID-specific namespace generated once. It is NOT the standard RFC 4122 URL/DNS namespace.
+> Changing it after migration scripts have run will break all foreign-key integrity.
+
+- Convert every `ObjectId` using **UUIDv5** with this fixed namespace:
   ```javascript
   const { v5: uuidv5 } = require('uuid');
-  const MEDIID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Fixed RFC 4122 namespace
+  const MEDIID_MIGRATION_NAMESPACE = '57c0c744-9cdc-41f9-a532-7e60be63d87f';
   
   function mongoIdToPostgresUuid(objectIdStr) {
-    return uuidv5(String(objectIdStr), MEDIID_NAMESPACE);
+    return uuidv5(String(objectIdStr), MEDIID_MIGRATION_NAMESPACE);
   }
   ```
 - Any related document referencing that `ObjectId` will calculate the exact same UUID, ensuring foreign-key integrity without requiring stateful ID mapping tables.
@@ -82,6 +91,26 @@ The embedded arrays on MongoDB's `Patient` are extracted into distinct relationa
 | `Requirement` | `research_requirements` | Research dataset specs, target sample size, pricing JSONB |
 | `Submission` | `dataset_submissions` + `submission_documents` | Patient submission with extracted child document rows |
 | `Message` | `marketplace_messages` | Chat messages between buyer and patient |
+
+### 2.5 Marketplace Consent & Access Isolation (New — Phase 1.2)
+These models have no MongoDB source. They are new PostgreSQL-only entities representing the Phase 1.2 research authorization chain:
+
+| PostgreSQL Target | Purpose |
+| :--- | :--- |
+| `dataset_consents` | Patient consent per research requirement. Must be granted before de-identification proceeds. |
+| `approved_datasets` | Versioned de-identified dataset snapshot. Buyers only access this table, never the source EHR. |
+| `dataset_access_grants` | Time-bounded buyer authorization per approved dataset. |
+| `dataset_access_logs` | Immutable audit trail of all buyer data access actions. |
+
+**Relational integrity (Phase 1.2 hardening):**
+`dataset_access_logs` carries **three** explicit Prisma FK relations:
+- `accessGrantId` → `dataset_access_grants` (primary navigation key)
+- `datasetId` → `approved_datasets` (direct FK for per-dataset audit queries without join)
+- `buyerId` → `buyers` (direct FK for per-buyer compliance queries without join)
+
+The duplicate `datasetId` / `buyerId` columns (also present on the grant) are intentional: they provide O(1) indexed audit lookups and enforce FK integrity at the database level.
+
+These tables are inserted as **empty at migration time** and populated through the Phase 2.9 marketplace module. They carry **zero foreign keys** into any clinical EHR table.
 
 ---
 

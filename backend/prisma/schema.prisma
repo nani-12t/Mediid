@@ -1,5 +1,6 @@
 // MEDIID - Target PostgreSQL Data Model (Prisma Schema Design)
-// Frozen for Phase 2 Implementation
+// Schema Version: Phase 1.2 — Final Schema Hardening (2026-10-06)
+// Frozen for Phase 2 Implementation — DO NOT modify without ADR approval
 
 generator client {
   provider        = "prisma-client-js"
@@ -255,7 +256,15 @@ enum SlotScheduleType {
 model DoctorSlot {
   id           String           @id @db.Uuid
   doctorId     String           @map("doctor_id") @db.Uuid
-  hospitalId   String?          @map("hospital_id") @db.Uuid // Nullable if private clinic slot
+  // hospitalId is INTENTIONALLY nullable.
+  // Rationale (Phase 1.2): A DoctorSlot defines a doctor's availability schedule.
+  // Private-practice doctors who have not yet been associated with any clinic/hospital
+  // organization record may define slots at the practitioner level before a clinic
+  // organization record is created. hospitalId becomes non-null once the doctor is
+  // affiliated with an organization (Hospital.type = clinic | private | government | trust).
+  // Appointments referencing a slot MUST always carry a non-null hospitalId — the
+  // organizational context is mandatory on Appointment, not on the slot template itself.
+  hospitalId   String?          @map("hospital_id") @db.Uuid
   scheduleType SlotScheduleType @map("schedule_type")
   specificDate DateTime?        @map("specific_date") @db.Date
   dayOfWeek    String?          @map("day_of_week") @db.VarChar(16)
@@ -339,6 +348,7 @@ model Patient {
   accessGrants         AccessGrant[]
   breakGlassEvents     BreakGlassEvent[]
   submissions          DatasetSubmission[]
+  datasetConsents      DatasetConsent[]
 
   @@index([uid])
   @@index([phone])
@@ -416,10 +426,26 @@ enum AppointmentStatus {
   rescheduled
 }
 
+// ORGANIZATIONAL CONTEXT INVARIANT (Phase 1.2):
+// Every Appointment MUST belong to an organization (Hospital record).
+// hospitalId is NON-NULLABLE on Appointment by design.
+//
+// For private clinic doctors, the clinic is represented as a Hospital record
+// with type = clinic. This guarantees that every clinical appointment carries
+// an organizational context — there are no organization-less appointments.
+//
+// Examples:
+//   Patient -> Apollo Hospital (type=private)    -> Cardiologist
+//   Patient -> Dr Rao Private Clinic (type=clinic) -> Dr Rao
+//
+// For a truly independent private-practice doctor not yet affiliated with any
+// organization, a clinic Hospital record must be created first.
 model Appointment {
   id                     String            @id @db.Uuid
   patientId              String            @map("patient_id") @db.Uuid
   doctorId               String            @map("doctor_id") @db.Uuid
+  // MANDATORY: Every appointment must have an organizational context.
+  // For private clinics, this references a Hospital record with type=clinic.
   hospitalId             String            @map("hospital_id") @db.Uuid
   appointmentDate        DateTime          @map("appointment_date") @db.Date
   timeSlot               String            @map("time_slot") @db.VarChar(32)
@@ -450,6 +476,7 @@ model Appointment {
   consultationSessions ConsultationSession[]
   accessLogs           AccessLog[]
   notifications        Notification[]
+  billingRecords       BillingRecord[]
 
   @@index([patientId])
   @@index([doctorId, appointmentDate])
@@ -774,9 +801,14 @@ model BillingRecord {
   id            String     @id @db.Uuid
   billCode      String     @unique @map("bill_code") @db.VarChar(64) // e.g. BILL-ABC1234
   patientId     String     @map("patient_id") @db.Uuid
+  // appointmentId is nullable because billing records also cover non-appointment expenses
+  // (e.g. pharmacy dispenses, custom lab bills, historical imported bills).
+  // When present, this is a proper Prisma relation to the Appointment record.
   appointmentId String?    @map("appointment_id") @db.Uuid
   title         String     @db.VarChar(255)
   category      String     @db.VarChar(100) // Consultation, Pharmacy, Lab, Surgery
+  // hospitalName / doctorName are free-text denormalized fields retained for
+  // historical imported billing records that have no relational context.
   hospitalName  String?    @map("hospital_name") @db.VarChar(255)
   doctorName    String?    @map("doctor_name") @db.VarChar(255)
   amount        Decimal    @db.Decimal(10, 2)
@@ -786,7 +818,8 @@ model BillingRecord {
   paymentMethod String?    @map("payment_method") @db.VarChar(100)
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
 
   @@index([patientId])
   @@index([status])
@@ -878,16 +911,28 @@ enum ConsentStatus {
   expired
 }
 
+// CLINICAL CONSENT ONLY (Phase 1.2):
+// This Consent model covers CLINICAL healthcare access exclusively.
+// granteeType MUST be one of: doctor | hospital | clinic
+// Purpose MUST be one of: clinical_care | second_opinion | treatment | referral
+//
+// Research / marketplace authorization is handled by a completely separate
+// DatasetConsent model in the air-gapped marketplace domain below.
+// Researchers and buyers NEVER appear in this model.
 model Consent {
   id          String        @id @db.Uuid
   patientId   String        @map("patient_id") @db.Uuid
-  granteeType String        @map("grantee_type") @db.VarChar(32) // doctor, hospital, researcher
+  // CLINICAL grantee types only: doctor | hospital | clinic
+  // Researcher access is handled via DatasetConsent — NOT this model.
+  granteeType String        @map("grantee_type") @db.VarChar(32)
   granteeId   String        @map("grantee_id") @db.VarChar(64) // UUID or UID of grantee
   scopes      String[]      // e.g. ["vitals", "prescriptions", "documents"]
-  purpose     String?       @db.VarChar(100) // clinical_care, second_opinion, research
+  // Clinical purpose values: clinical_care | second_opinion | treatment | referral
+  purpose     String?       @db.VarChar(100)
   status      ConsentStatus @default(active)
   validFrom   DateTime      @default(now()) @map("valid_from") @db.Timestamptz(6)
   validUntil  DateTime?     @map("valid_until") @db.Timestamptz(6)
+  revokedAt   DateTime?     @map("revoked_at") @db.Timestamptz(6)
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
@@ -957,6 +1002,30 @@ model AccessLog {
 // ─────────────────────────────────────────────────────────────
 // 12. DATA MARKETPLACE & RESEARCH DOMAIN (AIR-GAPPED)
 // ─────────────────────────────────────────────────────────────
+//
+// ISOLATION INVARIANT (Phase 1.2):
+// Buyers and researchers have ZERO direct access to any clinical EHR table.
+// The controlled data flow is:
+//
+//   ResearchRequirement
+//         ↓
+//   DatasetSubmission (patient voluntarily submits specific documents)
+//         ↓
+//   DatasetConsent    (patient provides explicit consent per requirement)
+//         ↓
+//   De-identification (PII stripped — name, phone, Aadhaar, address)
+//         ↓
+//   ApprovedDataset   (de-identified dataset snapshot, versioned)
+//         ↓
+//   DatasetAccessGrant (time-bounded access authorization)
+//         ↓
+//   Researcher accesses ApprovedDataset ONLY
+//         ↓
+//   DatasetAccessLog  (immutable audit trail)
+//
+// Buyers / researchers NEVER receive foreign keys to:
+//   patients, encounters, clinical_notes, prescriptions,
+//   lab_results, imaging_studies, or any live EHR entity.
 
 model Buyer {
   id          String   @id @db.Uuid
@@ -968,8 +1037,11 @@ model Buyer {
   address     String?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  requirements ResearchRequirement[]
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requirements        ResearchRequirement[]
+  datasetAccessGrants DatasetAccessGrant[]
+  // Audit: direct back-relation from DatasetAccessLog for compliance queries
+  datasetAccessLogs   DatasetAccessLog[]
 
   @@map("buyers")
 }
@@ -989,6 +1061,8 @@ model ResearchRequirement {
   buyer       Buyer                @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   submissions DatasetSubmission[]
   messages    MarketplaceMessage[]
+  datasetConsents     DatasetConsent[]
+  approvedDatasets    ApprovedDataset[]
 
   @@index([buyerId])
   @@index([status])
@@ -1007,6 +1081,7 @@ model DatasetSubmission {
   requirement ResearchRequirement  @relation(fields: [requirementId], references: [id], onDelete: Cascade)
   patient     Patient              @relation(fields: [patientId], references: [id], onDelete: Restrict)
   documents   SubmissionDocument[]
+  datasetConsents DatasetConsent[]
 
   @@index([requirementId])
   @@index([patientId])
@@ -1043,4 +1118,143 @@ model MarketplaceMessage {
   @@index([senderId, receiverId])
   @@index([receiverId, isRead])
   @@map("marketplace_messages")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 12b. RESEARCH DATASET CONSENT & ACCESS CONTROL
+//      (Air-gapped from clinical EHR authorization)
+// ─────────────────────────────────────────────────────────────
+
+enum DatasetConsentStatus {
+  pending
+  granted
+  revoked
+  expired
+}
+
+// DatasetConsent: Patient's explicit consent for a specific research requirement.
+// This is completely separate from clinical Consent.
+// A patient must grant DatasetConsent before their submission can be de-identified
+// and assembled into an ApprovedDataset for buyer access.
+model DatasetConsent {
+  id            String              @id @db.Uuid
+  submissionId  String              @map("submission_id") @db.Uuid
+  patientId     String              @map("patient_id") @db.Uuid
+  requirementId String              @map("requirement_id") @db.Uuid
+  // Scopes explicitly consented to, e.g. ["prescriptions", "lab_reports", "scans"]
+  consentScopes String[]            @map("consent_scopes")
+  status        DatasetConsentStatus @default(pending)
+  validFrom     DateTime            @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil    DateTime?           @map("valid_until") @db.Timestamptz(6)
+  revokedAt     DateTime?           @map("revoked_at") @db.Timestamptz(6)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  submission    DatasetSubmission    @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  patient       Patient              @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  requirement   ResearchRequirement  @relation(fields: [requirementId], references: [id], onDelete: Restrict)
+  approvedDatasets ApprovedDataset[]
+
+  @@index([patientId])
+  @@index([requirementId])
+  @@map("dataset_consents")
+}
+
+enum ApprovedDatasetStatus {
+  pending_review
+  approved
+  rejected
+  expired
+}
+
+enum DeidentificationStatus {
+  not_started
+  in_progress
+  completed
+  failed
+}
+
+// ApprovedDataset: The de-identified dataset snapshot produced after consent and review.
+// Buyers never receive direct patient identifiers — they only access ApprovedDatasets.
+// This record is versioned so re-runs of de-identification produce traceable versions.
+model ApprovedDataset {
+  id                    String                 @id @db.Uuid
+  requirementId         String                 @map("requirement_id") @db.Uuid
+  datasetConsentId      String                 @map("dataset_consent_id") @db.Uuid
+  status                ApprovedDatasetStatus  @default(pending_review)
+  version               Int                    @default(1)
+  deidentificationStatus DeidentificationStatus @default(not_started) @map("deidentification_status")
+  // storageRef holds the reference to the de-identified data artifact (e.g. S3 key, internal path)
+  storageRef            String?                @map("storage_ref") @db.VarChar(512)
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt             DateTime?              @map("expires_at") @db.Timestamptz(6)
+
+  requirement    ResearchRequirement   @relation(fields: [requirementId], references: [id], onDelete: Restrict)
+  datasetConsent DatasetConsent        @relation(fields: [datasetConsentId], references: [id], onDelete: Restrict)
+  accessGrants   DatasetAccessGrant[]
+  // Audit: direct back-relation from DatasetAccessLog for queryability
+  accessLogs     DatasetAccessLog[]
+
+  @@index([requirementId])
+  @@map("approved_datasets")
+}
+
+enum DatasetAccessGrantStatus {
+  active
+  revoked
+  expired
+}
+
+// DatasetAccessGrant: Time-bounded authorization for a buyer to access an ApprovedDataset.
+// Grants are per-dataset and per-buyer. Access automatically expires at validUntil.
+model DatasetAccessGrant {
+  id        String                  @id @db.Uuid
+  datasetId String                  @map("dataset_id") @db.Uuid
+  buyerId   String                  @map("buyer_id") @db.Uuid
+  // Purpose captures the declared research intent for this access grant
+  purpose   String                  @db.VarChar(255)
+  status    DatasetAccessGrantStatus @default(active)
+  validFrom DateTime                @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil DateTime?              @map("valid_until") @db.Timestamptz(6)
+  revokedAt DateTime?               @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  dataset    ApprovedDataset      @relation(fields: [datasetId], references: [id], onDelete: Restrict)
+  buyer      Buyer                @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+  accessLogs DatasetAccessLog[]
+
+  @@index([datasetId])
+  @@index([buyerId])
+  @@map("dataset_access_grants")
+}
+
+// DatasetAccessLog: Immutable audit trail of all buyer access to approved research datasets.
+// Logs are append-only — no cascade deletes on this table.
+//
+// Relational integrity (Phase 1.2):
+//   - accessGrantId: primary navigation key (grant carries dataset + buyer context)
+//   - datasetId:     direct FK to ApprovedDataset for fast per-dataset audit queries
+//   - buyerId:       direct FK to Buyer for fast per-buyer compliance queries
+// Both datasetId and buyerId are also carried on the DatasetAccessGrant, but
+// duplicate FK columns here provide O(1) indexed audit lookups without a join.
+model DatasetAccessLog {
+  id              String   @id @db.Uuid
+  datasetId       String   @map("dataset_id") @db.Uuid
+  accessGrantId   String   @map("access_grant_id") @db.Uuid
+  buyerId         String   @map("buyer_id") @db.Uuid
+  // action describes what the buyer did: e.g. download, view, export
+  action          String   @db.VarChar(64)
+  // ipAddress and userAgent for compliance and forensics
+  ipAddress       String?  @map("ip_address") @db.VarChar(64)
+  userAgent       String?  @map("user_agent") @db.VarChar(512)
+  requestMetadata Json?    @map("request_metadata") // additional structured request context
+  accessedAt      DateTime @default(now()) @map("accessed_at") @db.Timestamptz(6)
+
+  // Prisma relations — enforce FK integrity at the database level
+  accessGrant DatasetAccessGrant @relation(fields: [accessGrantId], references: [id], onDelete: Restrict)
+  dataset     ApprovedDataset    @relation(fields: [datasetId], references: [id], onDelete: Restrict)
+  buyer       Buyer              @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+
+  @@index([datasetId, accessedAt])
+  @@index([buyerId])
+  @@map("dataset_access_logs")
 }

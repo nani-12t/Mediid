@@ -90,6 +90,28 @@ In the original MongoDB schema, every doctor had a mandatory `hospital: ObjectId
    - For existing hospital-recruited doctors, `primaryHospitalId` is populated alongside an automatic entry in `doctor_hospital_memberships`.
    - The hierarchical UID format (`HID-XXXXXXXX-DOC-0001`) remains fully preserved for hospital-affiliated doctors, while independent doctors receive `DOC-XXXXXXXX`.
 
+### Organizational Context Invariant (Phase 1.2)
+
+> **Every Appointment MUST have a non-null `hospitalId` referencing a `Hospital` record.**
+
+The `Hospital` model acts as the **Healthcare Organization** entity in MEDIID. Private clinics are represented as `Hospital` records with `type = clinic`. This means:
+
+| Organization type | `Hospital.type` |
+|---|---|
+| Government hospital / PHC | `government` |
+| Private multispecialty hospital | `private` |
+| Charitable / trust hospital | `trust` |
+| Private clinic (individual / group) | `clinic` |
+
+**MEDIID does NOT rename `Hospital` to `Organization`** during Phase 2 to avoid migration complexity. The `type` field extends its semantics.
+
+**`DoctorSlot.hospitalId` is intentionally nullable** at the slot-template level (the doctor defines general availability), but becomes non-null in the context of a booked `Appointment`. See ADR-013.
+
+> **`Hospital` acts as the Healthcare Organization entity in MEDIID.**
+> The model is NOT renamed to `Organization` in Phase 2 to avoid migration complexity.
+> The `type` field extends its semantics: `government | private | trust | clinic`.
+> Every `Hospital` record — whether a large multispeciality hospital or a single-doctor private clinic — represents an organizational context that anchors clinical appointments, encounters, and billing.
+
 ---
 
 ## 4. Longitudinal Clinical Care (Encounter-Centered Model)
@@ -148,6 +170,41 @@ The research data marketplace is logically separated from the clinical care doma
 - **Submission Boundary**: Patients voluntarily submit specific anonymized documents to a requirement via `dataset_submissions` and `submission_documents`.
 - **Anonymization**: Submissions strip direct identifiers (name, phone, Aadhaar, address) before buyer inspection.
 - **Controlled Messaging**: Chat between buyers and patients occurs strictly through `marketplace_messages` referenced to specific research requirements.
+
+### Phase 1.2 — Dataset Consent & Access Control Chain
+
+The full controlled access pipeline (introduced in Phase 1.2):
+
+```
+ResearchRequirement
+        ↓
+DatasetSubmission (patient voluntarily uploads specific documents)
+        ↓
+DatasetConsent (patient explicitly consents, time-bounded, scoped, revocable)
+        ↓
+De-identification pipeline (PII stripped — name, phone, Aadhaar, address)
+        ↓
+ApprovedDataset (versioned, de-identified snapshot stored at storage ref)
+        ↓
+DatasetAccessGrant (buyer receives time-bounded access authorization)
+        ↓
+Researcher accesses ApprovedDataset ONLY (never raw EHR tables)
+        ↓
+DatasetAccessLog (immutable audit: action, IP, user agent, timestamp)
+```
+
+**New isolation tables (Phase 1.2):**
+
+| Table | Purpose |
+|---|---|
+| `dataset_consents` | Patient explicit consent per requirement, separate from clinical `consents` |
+| `approved_datasets` | De-identified dataset snapshot (versioned) |
+| `dataset_access_grants` | Time-bounded buyer access authorization |
+| `dataset_access_logs` | Immutable audit trail (append-only, with direct FKs to `approved_datasets` and `buyers`) |
+
+**Relational integrity (Phase 1.2 fix):** `dataset_access_logs` carries explicit Prisma FK relations on all three reference columns (`accessGrantId`, `datasetId`, `buyerId`). The `datasetId` → `approved_datasets` and `buyerId` → `buyers` relations eliminate disconnected UUID scalars and enforce FK constraints at the PostgreSQL level.
+
+**Clinical `consents` table** is exclusively for healthcare grantees (`doctor`, `hospital`, `clinic`). The `researcher` grantee type has been removed from the clinical consent model.
 
 ---
 

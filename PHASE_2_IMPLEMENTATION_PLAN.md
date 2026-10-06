@@ -4,6 +4,49 @@ This implementation plan details the sequential tasks for the Phase 2 implementa
 
 ---
 
+## Phase 1.2: Final Schema Hardening (COMPLETE — 2026-10-06)
+
+Phase 1.2 was executed and verified before Phase 2 implementation. The following decisions were frozen:
+
+### 1. Organizational Context Invariant (ADR-013)
+- Every `Appointment.hospitalId` is `NOT NULL`. Private clinics are represented as `Hospital` records with `type = clinic`.
+- `DoctorSlot.hospitalId` is **intentionally nullable** — slot templates are practitioner-level; org context is enforced at the Appointment level.
+- `Hospital.type` enum: `government | private | trust | clinic`.
+- Documented in: `ARCHITECTURE_DECISIONS.md` (ADR-013), `TARGET_ARCHITECTURE.md` §3.
+
+### 2. Clinical Consent Isolation
+- `Consent` model covers **clinical healthcare access only**: `granteeType` ∈ `{ doctor, hospital, clinic }`.
+- Research marketplace authorization uses a completely separate chain: `DatasetConsent → ApprovedDataset → DatasetAccessGrant → DatasetAccessLog`.
+- The `researcher` grantee type was **removed** from the clinical consent model.
+- Documented in: `ARCHITECTURE_DECISIONS.md` (ADR-009).
+
+### 3. MEDIID Migration Namespace (FROZEN)
+```
+MEDIID_MIGRATION_NAMESPACE = 57c0c744-9cdc-41f9-a532-7e60be63d87f
+```
+This value MUST NOT change after Phase 2.1 begins. It is recorded in both `ARCHITECTURE_DECISIONS.md` and `DATABASE_MIGRATION_PLAN.md`.
+
+### 4. Relational Integrity Fixes
+- `DatasetAccessLog.datasetId` → added explicit Prisma relation to `ApprovedDataset` (onDelete: Restrict).
+- `DatasetAccessLog.buyerId` → added explicit Prisma relation to `Buyer` (onDelete: Restrict).
+- `ApprovedDataset.accessLogs` back-relation added.
+- `Buyer.datasetAccessLogs` back-relation added.
+- All other relations (`BillingRecord → Appointment`, `Notification → Appointment`, `DatasetSubmission → Patient`, `DatasetConsent` chain) already had proper Prisma relations — confirmed correct.
+
+### 5. Prisma Validation
+- Runtime `prisma format` and `prisma validate` are **deferred to Phase 2.1** (PostgreSQL infrastructure not provisioned in Phase 1.2).
+- Static relational inspection confirmed: all FK scalar fields have corresponding Prisma relation declarations.
+- Schema version marked in `schema.prisma` header: `Phase 1.2 — Final Schema Hardening (2026-09-30)`.
+
+### Files Modified
+- `backend/prisma/schema.prisma` — Header version marker; `DatasetAccessLog` FK relations; `ApprovedDataset` and `Buyer` back-relations.
+- `ARCHITECTURE_DECISIONS.md` — ADR-005 and ADR-013 (already present, confirmed frozen).
+- `DATABASE_MIGRATION_PLAN.md` — Namespace frozen, §2.5 marketplace isolation models documented.
+- `TARGET_ARCHITECTURE.md` — Org context invariant, marketplace chain documented.
+- `PHASE_2_IMPLEMENTATION_PLAN.md` — This completion record.
+
+---
+
 ## Verification Pipeline (Gating Criteria for Every Step)
 No step is marked complete until it passes the following 5-point verification pipeline:
 ```
@@ -55,13 +98,15 @@ Proceed to next step
 - **Tasks**:
   1. Implement `hospitals` module with atomic sequence counters for `doctorSequence` and `staffSequence`.
   2. Implement `doctors` module supporting both hospital-affiliated and independent private clinic doctors (`isPrivatePractice = true`).
-  3. Implement `doctor_hospital_memberships` table for multi-hospital affiliations.
-  4. Implement `hospital_memberships` (staff) module and recruitment endpoints.
-  5. Implement `doctor_slots` module supporting one-off dates and weekly recurring schedules.
+  3. **Clinic Organization Creation Flow**: Implement `POST /api/hospitals` supporting `type = clinic` to allow private-practice doctors to register a clinic organization record. Every appointment must reference a `Hospital` record (including clinics). See ADR-013.
+  4. Implement `doctor_hospital_memberships` table for multi-hospital affiliations.
+  5. Implement `hospital_memberships` (staff) module and recruitment endpoints.
+  6. Implement `doctor_slots` module supporting one-off dates and weekly recurring schedules. Note: `DoctorSlot.hospitalId` is nullable by design; the org context is enforced at the `Appointment` level.
 - **Verification Gate**:
   - Hospital recruitment triggers generation of hierarchical UIDs (`HID-XXXXXXXX-DOC-0001`).
   - Public search `/api/doctors` and `/api/hospitals` returns weighted rating scores correctly.
   - Slot availability endpoint `/api/doctor-portal/slots/available` accurately calculates booked vs remaining capacity.
+  - `POST /api/appointments` rejects any request where `hospitalId` does not resolve to an existing Hospital record.
 
 ---
 
@@ -129,14 +174,22 @@ Proceed to next step
 ---
 
 ## Phase 2.9: Air-Gapped Research Data Marketplace
-- **Objective**: Migrate secondary MongoDB marketplace collections into isolated PostgreSQL tables.
+- **Objective**: Migrate secondary MongoDB marketplace collections into isolated PostgreSQL tables and implement the full Phase 1.2 dataset consent and access control chain.
 - **Tasks**:
   1. Implement `buyers`, `research_requirements`, `dataset_submissions`, and `submission_documents`.
   2. Implement `marketplace_messages` and Socket.IO real-time event broadcasting.
   3. Wire buyer dashboard and requirement creation routes.
+  4. Implement `DatasetConsent` module: patient consent per research requirement with scopes, validity window, and revocation endpoint (`POST /api/marketplace/consents`, `DELETE /api/marketplace/consents/:id`).
+  5. Implement `ApprovedDataset` module: admin/review endpoint to approve de-identified dataset submissions, triggering de-identification pipeline (initial stub in Phase 2.9, full implementation in later AI phase).
+  6. Implement `DatasetAccessGrant` module: grant time-bounded access to buyers upon dataset approval (`POST /api/marketplace/datasets/:id/grants`).
+  7. Implement `DatasetAccessLog` module: record every buyer access action in append-only `dataset_access_logs`; expose audit trail to platform admin.
+  8. Enforce middleware: buyer-role JWT tokens MUST NOT be accepted by any clinical EHR endpoint.
 - **Verification Gate**:
   - Buyers cannot access unsubmitted patient records.
+  - Buyers cannot access `patients`, `encounters`, `prescriptions`, or any clinical EHR endpoint.
   - Real-time chat messages persist to `marketplace_messages` with unread counts.
+  - Dataset consent can be revoked by the patient at any time, immediately invalidating related `DatasetAccessGrant` records.
+  - `DatasetAccessLog` records are created on every buyer access and cannot be deleted via API.
 
 ---
 

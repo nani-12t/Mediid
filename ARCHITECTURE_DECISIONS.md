@@ -86,12 +86,35 @@ Existing MongoDB documents use 24-character hexadecimal `ObjectId` strings. Post
 Use **UUIDv5** (deterministic SHA-1 hashing against a fixed MEDIID namespace) to convert all existing MongoDB ObjectIds:
 $$\text{PostgreSQL UUID} = \text{uuidv5}(\text{mongoObjectId.toString()}, \text{MEDIID\_NAMESPACE})$$
 
+### MEDIID Migration Namespace (FROZEN — Phase 1.2)
+
+> **This value is permanently frozen. It MUST NOT be changed after Phase 2 begins.**
+> Changing it after any migration script has run will shatter all foreign-key integrity.
+
+```
+MEDIID_MIGRATION_NAMESPACE = 57c0c744-9cdc-41f9-a532-7e60be63d87f
+```
+
+This is a MEDIID-specific UUID namespace, generated once using UUIDv4 and permanently frozen here. It is **not** a standard RFC 4122 namespace.
+
+**Usage in migration scripts:**
+```javascript
+const { v5: uuidv5 } = require('uuid');
+const MEDIID_MIGRATION_NAMESPACE = '57c0c744-9cdc-41f9-a532-7e60be63d87f';
+
+function mongoIdToPostgresUuid(objectIdStr) {
+  return uuidv5(String(objectIdStr), MEDIID_MIGRATION_NAMESPACE);
+}
+```
+
 ### Rationale
 - Completely deterministic and idempotent: running the migration multiple times produces identical primary and foreign keys.
 - Preserves referential integrity across related collections without needing persistent lookup tables.
+- A MEDIID-specific namespace (not the RFC URL or DNS namespace) prevents accidental collision with any UUIDs generated outside this project.
 
 ### Consequences
-- Migration scripts must use the exact same namespace constant (`MEDIID_NAMESPACE`).
+- Migration scripts must use the exact namespace constant `57c0c744-9cdc-41f9-a532-7e60be63d87f`.
+- This value is recorded in both this file and `DATABASE_MIGRATION_PLAN.md`.
 
 ---
 
@@ -156,20 +179,45 @@ Decompose the health record into an **Encounter-centered longitudinal architectu
 ## ADR-009: Data Marketplace Isolation from Clinical EHR Authorization
 
 ### Context
-The platform includes a research marketplace where pharmaceutical/research buyers post requirements and patients submit medical records for compensation.
+The platform includes a research marketplace where pharmaceutical/research buyers post requirements and patients submit medical records for compensation. The original Consent model included a generic `granteeType = researcher` value, which risks blurring the boundary between clinical access and research marketplace authorization.
 
 ### Decision
-The **Data Marketplace domain is strictly isolated** from clinical EHR authorization.
-- Buyers receive zero direct access to patient tables or the clinical EHR.
-- Data exchange occurs solely through explicit, de-identified `dataset_submissions` and `submission_documents`.
-- Patient consent is mandatory per requirement.
+The **Data Marketplace domain is strictly isolated** from clinical EHR authorization with two distinct consent systems:
+
+#### Clinical Consent (`consents` table)
+- Covers healthcare access only: `granteeType` ∈ `{ doctor, hospital, clinic }`
+- Purpose values: `clinical_care | second_opinion | treatment | referral`
+- Researchers and buyers **NEVER** appear in this model.
+
+#### Research Marketplace Authorization (separate models — Phase 1.2)
+A dedicated chain of models enforces the controlled data flow:
+
+| Model | Purpose |
+|---|---|
+| `DatasetConsent` | Patient's explicit consent per research requirement. Scoped, time-bounded, revocable. |
+| `ApprovedDataset` | Versioned de-identified dataset snapshot produced after consent and review. |
+| `DatasetAccessGrant` | Time-bounded authorization for a buyer to access an ApprovedDataset. |
+| `DatasetAccessLog` | Immutable audit trail of buyer access actions. |
+
+**Controlled access flow:**
+```
+ResearchRequirement → DatasetSubmission → DatasetConsent
+  → De-identification → ApprovedDataset
+  → DatasetAccessGrant → Researcher access → DatasetAccessLog
+```
+
+- Buyers receive zero direct access to `patients`, `encounters`, `clinical_notes`, `prescriptions`, `lab_results`, `imaging_studies`, or any other live EHR entity.
+- Data exchange occurs solely through `ApprovedDataset` records (de-identified snapshots).
+- Patient consent is mandatory via `DatasetConsent` per requirement.
 
 ### Rationale
 - Protects patient confidentiality and prevents accidental data leakage to unauthorized third parties.
 - Enforces strict compliance with healthcare data protection principles.
+- Clear separation of clinical consent from research consent eliminates authorization ambiguity.
 
 ### Consequences
 - Marketplace models reside in dedicated tables and have zero foreign keys granting read permissions to live patient clinical notes or appointments.
+- The `contextAccessGuard` middleware will enforce that buyer-role JWT tokens cannot access any clinical EHR endpoint.
 
 ---
 
@@ -229,3 +277,45 @@ Adopt a **multi-stage controlled migration with synchronization**:
 
 ### Consequences
 - Requires dual-write synchronization and consistency check scripts prior to final cutover.
+
+---
+
+## ADR-013: Organizational Context Invariant on Every Appointment (Phase 1.2)
+
+### Context
+The current `Doctor` model supports `isPrivatePractice = true` and a nullable `primaryHospitalId`, allowing a private-practice doctor to exist with no hospital affiliation. The original `Appointment` schema has `hospitalId NOT NULL`, but there was no documented architectural decision to match. This created a potential inconsistency: slots could be created with `hospitalId = null` while appointments required a non-null `hospitalId`.
+
+### Decision
+**Every clinical Appointment MUST carry a non-null `hospitalId` pointing to a `Hospital` record.**
+
+Private clinics and independent doctors are supported by representing the clinic as a `Hospital` record with `type = clinic` rather than creating organization-less appointments.
+
+**Invariant**:
+```
+Appointment.hospitalId IS NOT NULL — always.
+```
+
+**Supported organization types** (`Hospital.type` enum):
+| Value | Use Case |
+|---|---|
+| `government` | Government-run hospitals / PHCs |
+| `private` | Private multispeciality / single-specialty hospitals |
+| `trust` | Charitable / trust-run hospitals |
+| `clinic` | Private clinic (individual or group practice) |
+
+**Workflow for independent private-practice doctors:**
+1. Create a `Hospital` record with `type = clinic` and the doctor's clinic name.
+2. Create a `DoctorHospitalMembership` linking the doctor to the clinic.
+3. Create appointments against this clinic organization record.
+
+**`DoctorSlot.hospitalId` remains NULLABLE** because a slot template is defined at the practitioner availability level, independent of which specific organization context is used at booking time. The organizational context is enforced at the `Appointment` level, not the slot template level.
+
+### Rationale
+- Eliminates organization-less appointment gaps in billing, audit, and compliance reporting.
+- Preserves backward compatibility: `Hospital` is not renamed; `type = clinic` extends its semantics.
+- Avoids introducing a separate `Organization` model in Phase 2, which would require significant migration complexity.
+
+### Consequences
+- All appointment creation endpoints must validate that a `Hospital` record exists before persisting the appointment.
+- Phase 2.1 schema validation must enforce `hospitalId NOT NULL` at the database level (already done in `schema.prisma`).
+- Phase 2.3 must implement a clinic creation flow for independent private-practice doctor onboarding.
