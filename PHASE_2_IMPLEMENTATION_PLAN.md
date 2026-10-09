@@ -47,6 +47,45 @@ This value MUST NOT change after Phase 2.1 begins. It is recorded in both `ARCHI
 
 ---
 
+## Phase 1.3: Final Appointment Architecture Freeze (COMPLETE — 2026-10-09)
+
+Phase 1.3 finalizes the appointment domain architecture freeze before Phase 2 runtime execution:
+
+### 1. Separate Scheduling Domains (Hospital vs. Private Clinic)
+- `HospitalAppointment`: Front-desk managed, hospital organization bound. Confirmation modes: `DEPOSIT`, `TIME_BASED`, `MANUAL`.
+- `PrivateClinicAppointment`: Strictly **Doctor-Owned** practice. **NO receptionist or front-desk role/portal**. Online booking enforces mandatory 50% deposit.
+- Both domains link to shared `Encounter` longitudinal records (`hospitalAppointmentId`, `privateClinicAppointmentId`), while encounters can also be created without appointments.
+
+### 2. Materialized Appointment Slots
+- `MaterializedAppointmentSlot` rows pre-generated with `ONLINE`, `OFFLINE`, and `FLEXIBLE` channels.
+- `@@unique([doctorId, slotStart])` prevents double booking the same practitioner across hospital and clinic contexts.
+- Recurring patterns (`RecurringAvailabilityTemplate`) and calendar blocks (`ScheduleOverride`) materialize into concrete slot records.
+- Reopening mechanism: Cancelled or expired reservations automatically reset to `AVAILABLE` with incremented `reopenedCount`.
+
+### 3. Dynamic Payment Deadlines & Fast-Confirm Window
+- Payment hold deadline: $\min(60\text{ min},\; \text{slotStart} - 10\text{ min})$.
+- Safety cutoff: Online booking closes 10 minutes prior to slot start time.
+- Fast-confirm window: 5 minutes when lead time is between 10 and 15 minutes before slot start.
+- Boundary condition: If computed hold window $\le 0$, transaction aborts immediately (never create expired/zero-duration holds).
+- Offline / walk-in bookings do not require online payment holds.
+
+### 4. Configurable Provider Policies, Refunds & Audit
+- Provider-initiated cancellations guarantee a 100% full refund or agreed transfer credit (`TRANSFER_CREDIT_OFFERED`).
+- Original payment history preserved without mutation; refunds tracked via `refundStatus`, `refundAmount`, `refundTransactionRef`.
+- `support_agent` role added: Can perform `SUPPORT_ASSISTED` bookings with full audit trail (`bookedByUserId`). Support agents cannot bypass provider policies or view clinical EHR notes/vitals.
+
+### Files Modified
+- `backend/prisma/schema.prisma` — Schema version 1.3; added `support_agent` UserRole; added `HospitalSchedulingRule`, `DoctorClinicPolicy`, `RecurringAvailabilityTemplate`, `ScheduleOverride`, `MaterializedAppointmentSlot`, `HospitalAppointment`, and `PrivateClinicAppointment` with full relations.
+- `ARCHITECTURE_DECISIONS.md` — Added ADR-014, ADR-015, ADR-016, and ADR-017.
+- `TARGET_ARCHITECTURE.md` — Added Section 8 detailing domain split, materialized slot locking, payment deadlines, and audit models.
+- `DATABASE_MIGRATION_PLAN.md` — Added Section 2.6 mapping new scheduling models.
+- `API_COMPATIBILITY.md` — Updated appointment compatibility adapter mappings for both scheduling domains.
+- `PHASE_2_IMPLEMENTATION_PLAN.md` — Added Phase 1.3 completion record and updated Phase 2.5 scope.
+
+---
+
+---
+
 ## Verification Pipeline (Gating Criteria for Every Step)
 No step is marked complete until it passes the following 5-point verification pipeline:
 ```

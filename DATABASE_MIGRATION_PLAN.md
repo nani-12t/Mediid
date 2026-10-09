@@ -112,6 +112,19 @@ The duplicate `datasetId` / `buyerId` columns (also present on the grant) are in
 
 These tables are inserted as **empty at migration time** and populated through the Phase 2.9 marketplace module. They carry **zero foreign keys** into any clinical EHR table.
 
+### 2.6 Materialized Slots & Scheduling Domains (New — Phase 1.3)
+Phase 1.3 introduces decoupled scheduling domains and materialized slot tables. Existing MongoDB `Appointment` records are migrated deterministically into `appointments` using UUIDv5 as the baseline compatibility table, while new PostgreSQL operational tables are populated as follows:
+
+| PostgreSQL Target | Source / Migration Strategy |
+| :--- | :--- |
+| `appointments` | Backfilled from MongoDB `Appointment` collection using UUIDv5 (`mongoIdToPostgresUuid`). Preserves legacy compatibility. |
+| `hospital_scheduling_rules` | Default configuration inserted per existing `Hospital` record (`confirmationMode: TIME_BASED`, `paymentHoldWindow: 60m`). |
+| `doctor_clinic_policies` | Default configuration inserted per existing `Doctor` with `isPrivatePractice = true` (`depositPercentage: 50%`). |
+| `recurring_availability_templates` | Migrated from existing `DoctorSlot` records with `scheduleType: 'day'`. |
+| `materialized_appointment_slots` | Materialized for active scheduling windows (today to +30 days) from recurring templates. |
+| `hospital_appointments` | Operates new hospital front-desk bookings post-cutover. |
+| `private_clinic_appointments` | Operates new doctor-owned private clinic bookings post-cutover. |
+
 ---
 
 ## 3. Safe Cutover & Rollback Protocol (Multi-Stage Migration)

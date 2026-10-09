@@ -1,5 +1,5 @@
 // MEDIID - Target PostgreSQL Data Model (Prisma Schema Design)
-// Schema Version: Phase 1.2 — Final Schema Hardening (2026-10-06)
+// Schema Version: Phase 1.3 — Final Appointment Architecture Freeze (2026-10-09)
 // Frozen for Phase 2 Implementation — DO NOT modify without ADR approval
 
 generator client {
@@ -23,6 +23,7 @@ enum UserRole {
   doctor
   buyer
   pharmacy
+  support_agent
 }
 
 model User {
@@ -46,8 +47,12 @@ model User {
   buyerProfile          Buyer?
   uploadedDocuments     MedicalDocument[]       @relation("DocumentUploadedBy")
   clinicalNotesAuthored ClinicalNote[]          @relation("ClinicalNoteAuthor")
-  handledAppointments   Appointment[]           @relation("AppointmentHandledBy")
-  accessLogsTriggered   AccessLog[]             @relation("AccessLogTriggeredBy")
+  handledAppointments              Appointment[]              @relation("AppointmentHandledBy")
+  handledHospitalAppointments      HospitalAppointment[]      @relation("HospitalAppointmentHandledBy")
+  handledPrivateClinicAppointments PrivateClinicAppointment[] @relation("PrivateClinicAppointmentHandledBy")
+  bookedHospitalAppointments       HospitalAppointment[]      @relation("HospitalAppointmentBookedBy")
+  bookedPrivateClinicAppointments  PrivateClinicAppointment[] @relation("PrivateClinicAppointmentBookedBy")
+  accessLogsTriggered              AccessLog[]                @relation("AccessLogTriggeredBy")
   breakGlassEvents      BreakGlassEvent[]       @relation("BreakGlassTriggeredBy")
   sentMessages          MarketplaceMessage[]    @relation("MessageSender")
   receivedMessages      MarketplaceMessage[]    @relation("MessageReceiver")
@@ -108,13 +113,18 @@ model Hospital {
   memberships            DoctorHospitalMembership[]
   staffMembers           HospitalStaff[]
   pharmacies             Pharmacy[]
-  appointments           Appointment[]
-  encounters             Encounter[]
-  prescriptions          Prescription[]
-  doctorSlots            DoctorSlot[]
-  trustedByPatients      PatientTrustedHospital[]
-  accessGrants           AccessGrant[]
-  breakGlassEvents       BreakGlassEvent[]
+  appointments                    Appointment[]
+  hospitalAppointments            HospitalAppointment[]
+  schedulingRules                 HospitalSchedulingRule[]
+  recurringAvailabilityTemplates  RecurringAvailabilityTemplate[]
+  scheduleOverrides               ScheduleOverride[]
+  materializedSlots               MaterializedAppointmentSlot[]
+  encounters                      Encounter[]
+  prescriptions                   Prescription[]
+  doctorSlots                     DoctorSlot[]
+  trustedByPatients               PatientTrustedHospital[]
+  accessGrants                    AccessGrant[]
+  breakGlassEvents                BreakGlassEvent[]
 
   @@index([city])
   @@index([isActive])
@@ -218,15 +228,21 @@ model Doctor {
   user                 User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
   primaryHospital      Hospital?                  @relation("PrimaryHospitalDoctors", fields: [primaryHospitalId], references: [id], onDelete: SetNull)
   hospitalMemberships  DoctorHospitalMembership[]
-  appointments         Appointment[]
-  encounters           Encounter[]
-  prescriptions        Prescription[]
-  doctorSlots          DoctorSlot[]
-  consultationSessions ConsultationSession[]
-  trustedByPatients    PatientTrustedDoctor[]
-  accessLogsTargeted   AccessLog[]
-  accessGrants         AccessGrant[]
-  breakGlassEvents     BreakGlassEvent[]
+  appointments                    Appointment[]
+  hospitalAppointments            HospitalAppointment[]
+  privateClinicAppointments       PrivateClinicAppointment[]
+  clinicSchedulingPolicy          DoctorClinicPolicy?
+  recurringAvailabilityTemplates  RecurringAvailabilityTemplate[]
+  scheduleOverrides               ScheduleOverride[]
+  materializedSlots               MaterializedAppointmentSlot[]
+  encounters                      Encounter[]
+  prescriptions                   Prescription[]
+  doctorSlots                     DoctorSlot[]
+  consultationSessions            ConsultationSession[]
+  trustedByPatients               PatientTrustedDoctor[]
+  accessLogsTargeted              AccessLog[]
+  accessGrants                    AccessGrant[]
+  breakGlassEvents                BreakGlassEvent[]
 
   @@index([specialization])
   @@index([primaryHospitalId])
@@ -282,6 +298,202 @@ model DoctorSlot {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 3b. MATERIALIZED APPOINTMENT SLOTS & ADVANCED SCHEDULING (Phase 1.3)
+// ─────────────────────────────────────────────────────────────
+
+enum SlotChannel {
+  ONLINE
+  OFFLINE
+  FLEXIBLE
+}
+
+enum SlotState {
+  AVAILABLE
+  HELD
+  BOOKED
+  BLOCKED
+  EXPIRED
+}
+
+enum HospitalConfirmationMode {
+  DEPOSIT
+  TIME_BASED
+  MANUAL
+}
+
+enum OverrideType {
+  LEAVE
+  EMERGENCY_BLOCK
+  CUSTOM_HOURS
+  HOLIDAY
+}
+
+enum BookingChannel {
+  ONLINE_APP
+  WALK_IN
+  PHONE
+  SUPPORT_ASSISTED
+}
+
+enum PaymentHoldStatus {
+  NONE
+  PENDING
+  HELD
+  PAID
+  RELEASED
+  EXPIRED
+}
+
+enum CancellationInitiator {
+  PATIENT
+  DOCTOR
+  HOSPITAL_FRONT_DESK
+  SUPPORT_AGENT
+  SYSTEM_AUTO_EXPIRE
+}
+
+enum RescheduleInitiator {
+  PATIENT
+  DOCTOR
+  HOSPITAL_FRONT_DESK
+  SUPPORT_AGENT
+}
+
+enum RefundStatus {
+  NOT_APPLICABLE
+  PENDING
+  COMPLETED
+  FAILED
+  REJECTED
+  TRANSFER_CREDIT_OFFERED
+}
+
+// Hospital front-desk scheduling configuration
+model HospitalSchedulingRule {
+  id                        String                   @id @db.Uuid
+  hospitalId                String                   @unique @map("hospital_id") @db.Uuid
+  confirmationMode          HospitalConfirmationMode @default(TIME_BASED) @map("confirmation_mode")
+  depositRequired           Boolean                  @default(false) @map("deposit_required")
+  depositPercentage         Decimal                  @default(0.00) @map("deposit_percentage") @db.Decimal(5, 2)
+  depositFixedAmount        Decimal?                 @map("deposit_fixed_amount") @db.Decimal(10, 2)
+  paymentHoldWindowMinutes  Int                      @default(60) @map("payment_hold_window_minutes")
+  safetyCutoffMinutes       Int                      @default(10) @map("safety_cutoff_minutes")
+  fastConfirmWindowMinutes  Int                      @default(5) @map("fast_confirm_window_minutes")
+  cancellationCutoffHours   Int                      @default(2) @map("cancellation_cutoff_hours")
+  rescheduleCutoffHours     Int                      @default(2) @map("reschedule_cutoff_hours")
+  maxRescheduleCount        Int                      @default(2) @map("max_reschedule_count")
+  refundPolicyNotes         String?                  @map("refund_policy_notes")
+  allowWalkIns              Boolean                  @default(true) @map("allow_walk_ins")
+  allowPhoneBookings        Boolean                  @default(true) @map("allow_phone_bookings")
+  createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  hospital Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@map("hospital_scheduling_rules")
+}
+
+// Private clinic doctor-owned scheduling configuration
+// Note: Doctor-owned strictly — NO receptionist or front desk role
+model DoctorClinicPolicy {
+  id                        String   @id @db.Uuid
+  doctorId                  String   @unique @map("doctor_id") @db.Uuid
+  depositPercentage         Decimal  @default(50.00) @map("deposit_percentage") @db.Decimal(5, 2) // Required 50% online deposit
+  paymentHoldWindowMinutes  Int      @default(60) @map("payment_hold_window_minutes")
+  safetyCutoffMinutes       Int      @default(10) @map("safety_cutoff_minutes")
+  fastConfirmWindowMinutes  Int      @default(5) @map("fast_confirm_window_minutes")
+  cancellationCutoffHours   Int      @default(4) @map("cancellation_cutoff_hours")
+  rescheduleCutoffHours     Int      @default(4) @map("reschedule_cutoff_hours")
+  maxRescheduleCount        Int      @default(1) @map("max_reschedule_count")
+  noShowFeeDeduction        Decimal  @default(100.00) @map("no_show_fee_deduction") @db.Decimal(5, 2) // % deducted if patient no-show
+  refundPolicyNotes         String?  @map("refund_policy_notes")
+  allowPhoneBookings        Boolean  @default(true) @map("allow_phone_bookings")
+  allowWalkIns              Boolean  @default(true) @map("allow_walk_ins")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@map("doctor_clinic_policies")
+}
+
+// Recurring availability pattern (e.g. Every Monday 09:00 - 13:00)
+model RecurringAvailabilityTemplate {
+  id             String      @id @db.Uuid
+  doctorId       String      @map("doctor_id") @db.Uuid
+  hospitalId     String?     @map("hospital_id") @db.Uuid // Nullable for independent private clinic
+  dayOfWeek      String      @map("day_of_week") @db.VarChar(16) // MONDAY, TUESDAY, etc.
+  startTime      String      @map("start_time") @db.VarChar(10) // "09:00"
+  endTime        String      @map("end_time") @db.VarChar(10) // "13:00"
+  slotDuration   Int         @default(15) @map("slot_duration") // Duration in minutes
+  channel        SlotChannel @default(FLEXIBLE)
+  capacityPerSlot Int        @default(1) @map("capacity_per_slot")
+  timezone       String      @default("Asia/Kolkata") @db.VarChar(64)
+  effectiveFrom  DateTime    @map("effective_from") @db.Date
+  effectiveUntil DateTime?   @map("effective_until") @db.Date
+  isActive       Boolean     @default(true) @map("is_active")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  doctor   Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  hospital Hospital? @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, dayOfWeek, isActive])
+  @@index([hospitalId])
+  @@map("recurring_availability_templates")
+}
+
+// Schedule override (leaves, emergency blocks, custom hours, holidays)
+model ScheduleOverride {
+  id           String       @id @db.Uuid
+  doctorId     String       @map("doctor_id") @db.Uuid
+  hospitalId   String?      @map("hospital_id") @db.Uuid // Nullable for clinic
+  overrideType OverrideType @map("override_type")
+  startDateTime DateTime    @map("start_date_time") @db.Timestamptz(6)
+  endDateTime   DateTime    @map("end_date_time") @db.Timestamptz(6)
+  reason       String?
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  doctor   Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  hospital Hospital? @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, startDateTime, endDateTime])
+  @@map("schedule_overrides")
+}
+
+// Materialized individual appointment slots
+// Prevents cross-facility doctor conflicts and enforces transactional reservation
+model MaterializedAppointmentSlot {
+  id                    String      @id @db.Uuid
+  doctorId              String      @map("doctor_id") @db.Uuid
+  hospitalId            String?     @map("hospital_id") @db.Uuid // Org context; null for independent private practice
+  slotStart             DateTime    @map("slot_start") @db.Timestamptz(6)
+  slotEnd               DateTime    @map("slot_end") @db.Timestamptz(6)
+  channel               SlotChannel @default(FLEXIBLE)
+  state                 SlotState   @default(AVAILABLE)
+  holdExpiresAt         DateTime?   @map("hold_expires_at") @db.Timestamptz(6)
+  heldByUserId          String?     @map("held_by_user_id") @db.Uuid
+  version               Int         @default(0) // Optimistic concurrency version
+  reopenedCount         Int         @default(0) @map("reopened_count")
+  lastReopenedAt        DateTime?   @map("last_reopened_at") @db.Timestamptz(6)
+  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  doctor                     Doctor                      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  hospital                   Hospital?                   @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  hospitalAppointments       HospitalAppointment[]
+  privateClinicAppointments  PrivateClinicAppointment[]
+
+  // Doctor uniqueness invariant: a doctor can never have overlapping slots
+  // across any hospital or clinic context
+  @@unique([doctorId, slotStart])
+  @@index([doctorId, slotStart, slotEnd])
+  @@index([hospitalId, slotStart])
+  @@index([state, slotStart])
+  @@map("materialized_appointment_slots")
+}
+
+// ─────────────────────────────────────────────────────────────
 // 4. PATIENT RECORD, DEMOGRAPHICS & EMERGENCY PROFILE
 // ─────────────────────────────────────────────────────────────
 
@@ -330,10 +542,12 @@ model Patient {
   // Relations
   user                 User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   benefits             PatientBenefit[]
-  trustedDoctors       PatientTrustedDoctor[]
-  trustedHospitals     PatientTrustedHospital[]
-  appointments         Appointment[]
-  encounters           Encounter[]
+  trustedDoctors            PatientTrustedDoctor[]
+  trustedHospitals          PatientTrustedHospital[]
+  appointments              Appointment[]
+  hospitalAppointments      HospitalAppointment[]
+  privateClinicAppointments PrivateClinicAppointment[]
+  encounters                Encounter[]
   conditions           Condition[]
   allergies            Allergy[]
   prescriptions        Prescription[]
@@ -485,23 +699,185 @@ model Appointment {
 }
 
 model ConsultationSession {
-  id            String    @id @db.Uuid
-  patientId     String    @map("patient_id") @db.Uuid
-  doctorId      String    @map("doctor_id") @db.Uuid
-  appointmentId String    @map("appointment_id") @db.Uuid
-  token         String    @unique @db.VarChar(128)
-  status        String    @default("active") @db.VarChar(32) // active, completed, expired
-  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
+  id                           String                    @id @db.Uuid
+  patientId                    String                    @map("patient_id") @db.Uuid
+  doctorId                     String                    @map("doctor_id") @db.Uuid
+  appointmentId                String?                   @map("appointment_id") @db.Uuid // Nullable to support domain split
+  hospitalAppointmentId         String?                   @map("hospital_appointment_id") @db.Uuid
+  privateClinicAppointmentId    String?                   @map("private_clinic_appointment_id") @db.Uuid
+  token                        String                    @unique @db.VarChar(128)
+  status                       String                    @default("active") @db.VarChar(32) // active, completed, expired
+  expiresAt                    DateTime                  @map("expires_at") @db.Timestamptz(6)
+  createdAt                    DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt                  DateTime?                 @map("completed_at") @db.Timestamptz(6)
 
-  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  doctor      Doctor      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  accessLogs  AccessLog[]
+  patient                  Patient                    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor                   Doctor                     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  appointment              Appointment?               @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  hospitalAppointment      HospitalAppointment?      @relation(fields: [hospitalAppointmentId], references: [id], onDelete: Cascade)
+  privateClinicAppointment PrivateClinicAppointment? @relation(fields: [privateClinicAppointmentId], references: [id], onDelete: Cascade)
+  accessLogs               AccessLog[]
 
   @@index([patientId, doctorId, status])
   @@map("consultation_sessions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 5b. DOMAIN-SPECIFIC SCHEDULING: HOSPITAL & PRIVATE CLINIC
+// ─────────────────────────────────────────────────────────────
+
+// Hospital Appointment: Managed by Front Desk, supports DEPOSIT, TIME_BASED, MANUAL
+model HospitalAppointment {
+  id                     String            @id @db.Uuid
+  patientId              String            @map("patient_id") @db.Uuid
+  doctorId               String            @map("doctor_id") @db.Uuid
+  hospitalId             String            @map("hospital_id") @db.Uuid
+  slotId                 String?           @map("slot_id") @db.Uuid
+  bookingChannel         BookingChannel    @default(ONLINE_APP) @map("booking_channel")
+  status                 AppointmentStatus @default(pending)
+  confirmationMode       HospitalConfirmationMode @default(TIME_BASED) @map("confirmation_mode")
+  appointmentDate        DateTime          @map("appointment_date") @db.Date
+  timeSlot               String            @map("time_slot") @db.VarChar(32)
+  slotStartTime          DateTime          @map("slot_start_time") @db.Timestamptz(6)
+  slotEndTime            DateTime          @map("slot_end_time") @db.Timestamptz(6)
+  
+  // Payment Hold & Deadlines
+  holdExpiresAt          DateTime?         @map("hold_expires_at") @db.Timestamptz(6)
+  paymentHoldStatus      PaymentHoldStatus @default(NONE) @map("payment_hold_status")
+  depositRequired        Boolean           @default(false) @map("deposit_required")
+  depositAmount          Decimal           @default(0.00) @map("deposit_amount") @db.Decimal(10, 2)
+  totalFee               Decimal           @default(500.00) @map("total_fee") @db.Decimal(10, 2)
+  amountPaid             Decimal           @default(0.00) @map("amount_paid") @db.Decimal(10, 2)
+  paymentIdempotencyKey  String?           @unique @map("payment_idempotency_key") @db.VarChar(128)
+
+  // Policy snapshot at booking
+  policySnapshot         Json?             @map("policy_snapshot")
+
+  // Rescheduling & Cancellation tracking
+  rescheduleCount        Int               @default(0) @map("reschedule_count")
+  cancellationInitiator  CancellationInitiator? @map("cancellation_initiator")
+  cancellationReason     String?           @map("cancellation_reason")
+  cancelledAt            DateTime?         @map("cancelled_at") @db.Timestamptz(6)
+  refundStatus           RefundStatus      @default(NOT_APPLICABLE) @map("refund_status")
+  refundAmount           Decimal           @default(0.00) @map("refund_amount") @db.Decimal(10, 2)
+  refundTransactionRef   String?           @map("refund_transaction_ref") @db.VarChar(128)
+  noShowRecorded         Boolean           @default(false) @map("no_show_recorded")
+
+  // Support / Front-desk handling & auditing
+  bookedByUserId         String?           @map("booked_by_user_id") @db.Uuid
+  handledByUserId        String?           @map("handled_by_user_id") @db.Uuid
+  supportNotes           String?           @map("support_notes")
+  staffNotes             String?           @map("staff_notes")
+
+  // Notifications & tokens
+  confirmToken           String            @unique @default(uuid()) @map("confirm_token") @db.VarChar(64)
+  confirmTokenUsed       Boolean           @default(false) @map("confirm_token_used")
+  patientConfirmedAt     DateTime?         @map("patient_confirmed_at") @db.Timestamptz(6)
+  confirmedAt            DateTime?         @map("confirmed_at") @db.Timestamptz(6)
+  confirmationMethod     String?           @map("confirmation_method") @db.VarChar(32)
+
+  // Patient metadata
+  symptoms               String?
+  notes                  String?
+  contactPhone           String?           @map("contact_phone") @db.VarChar(32)
+  preferredContactMethod String            @default("whatsapp") @map("preferred_contact_method") @db.VarChar(32)
+
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  patient              Patient                      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  doctor               Doctor                       @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  hospital             Hospital                     @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+  slot                 MaterializedAppointmentSlot? @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  bookedByUser         User?                        @relation("HospitalAppointmentBookedBy", fields: [bookedByUserId], references: [id])
+  handledByUser        User?                        @relation("HospitalAppointmentHandledBy", fields: [handledByUserId], references: [id])
+  encounters           Encounter[]
+  consultationSessions ConsultationSession[]
+  billingRecords       BillingRecord[]
+  notifications        Notification[]
+  accessLogs           AccessLog[]
+
+  @@index([patientId])
+  @@index([doctorId, appointmentDate])
+  @@index([hospitalId, appointmentDate])
+  @@index([status, holdExpiresAt])
+  @@map("hospital_appointments")
+}
+
+// Private Clinic Appointment: Doctor-owned strictly (NO receptionist role)
+// Online bookings require mandatory 50% deposit
+model PrivateClinicAppointment {
+  id                     String            @id @db.Uuid
+  patientId              String            @map("patient_id") @db.Uuid
+  doctorId               String            @map("doctor_id") @db.Uuid
+  clinicHospitalId       String?           @map("clinic_hospital_id") @db.Uuid // Optional clinic org context
+  slotId                 String?           @map("slot_id") @db.Uuid
+  bookingChannel         BookingChannel    @default(ONLINE_APP) @map("booking_channel")
+  status                 AppointmentStatus @default(pending)
+  appointmentDate        DateTime          @map("appointment_date") @db.Date
+  timeSlot               String            @map("time_slot") @db.VarChar(32)
+  slotStartTime          DateTime          @map("slot_start_time") @db.Timestamptz(6)
+  slotEndTime            DateTime          @map("slot_end_time") @db.Timestamptz(6)
+
+  // Payment Hold & 50% Deposit Requirements
+  holdExpiresAt          DateTime?         @map("hold_expires_at") @db.Timestamptz(6)
+  paymentHoldStatus      PaymentHoldStatus @default(NONE) @map("payment_hold_status")
+  depositPercentage      Decimal           @default(50.00) @map("deposit_percentage") @db.Decimal(5, 2)
+  depositAmount          Decimal           @map("deposit_amount") @db.Decimal(10, 2)
+  totalFee               Decimal           @default(500.00) @map("total_fee") @db.Decimal(10, 2)
+  amountPaid             Decimal           @default(0.00) @map("amount_paid") @db.Decimal(10, 2)
+  paymentIdempotencyKey  String?           @unique @map("payment_idempotency_key") @db.VarChar(128)
+
+  // Doctor policy snapshot at booking
+  policySnapshot         Json?             @map("policy_snapshot")
+
+  // Rescheduling & Cancellation tracking
+  rescheduleCount        Int               @default(0) @map("reschedule_count")
+  cancellationInitiator  CancellationInitiator? @map("cancellation_initiator")
+  cancellationReason     String?           @map("cancellation_reason")
+  cancelledAt            DateTime?         @map("cancelled_at") @db.Timestamptz(6)
+  refundStatus           RefundStatus      @default(NOT_APPLICABLE) @map("refund_status")
+  refundAmount           Decimal           @default(0.00) @map("refund_amount") @db.Decimal(10, 2)
+  refundTransactionRef   String?           @map("refund_transaction_ref") @db.VarChar(128)
+  noShowRecorded         Boolean           @default(false) @map("no_show_recorded")
+
+  // Support / Doctor handling & auditing
+  bookedByUserId         String?           @map("booked_by_user_id") @db.Uuid
+  handledByUserId        String?           @map("handled_by_user_id") @db.Uuid
+  supportNotes           String?           @map("support_notes")
+  doctorNotes            String?           @map("doctor_notes")
+
+  // Notifications & tokens
+  confirmToken           String            @unique @default(uuid()) @map("confirm_token") @db.VarChar(64)
+  confirmTokenUsed       Boolean           @default(false) @map("confirm_token_used")
+  patientConfirmedAt     DateTime?         @map("patient_confirmed_at") @db.Timestamptz(6)
+  confirmedAt            DateTime?         @map("confirmed_at") @db.Timestamptz(6)
+  confirmationMethod     String?           @map("confirmation_method") @db.VarChar(32)
+
+  // Patient metadata
+  symptoms               String?
+  notes                  String?
+  contactPhone           String?           @map("contact_phone") @db.VarChar(32)
+  preferredContactMethod String            @default("whatsapp") @map("preferred_contact_method") @db.VarChar(32)
+
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  patient              Patient                      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  doctor               Doctor                       @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  slot                 MaterializedAppointmentSlot? @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  bookedByUser         User?                        @relation("PrivateClinicAppointmentBookedBy", fields: [bookedByUserId], references: [id])
+  handledByUser        User?                        @relation("PrivateClinicAppointmentHandledBy", fields: [handledByUserId], references: [id])
+  encounters           Encounter[]
+  consultationSessions ConsultationSession[]
+  billingRecords       BillingRecord[]
+  notifications        Notification[]
+  accessLogs           AccessLog[]
+
+  @@index([patientId])
+  @@index([doctorId, appointmentDate])
+  @@index([status, holdExpiresAt])
+  @@map("private_clinic_appointments")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -523,22 +899,26 @@ enum EncounterType {
 }
 
 model Encounter {
-  id              String          @id @db.Uuid
-  appointmentId   String?         @map("appointment_id") @db.Uuid
-  patientId       String          @map("patient_id") @db.Uuid
-  doctorId        String          @map("doctor_id") @db.Uuid
-  hospitalId      String?         @map("hospital_id") @db.Uuid
-  encounterType   EncounterType   @default(ambulatory) @map("encounter_type")
-  status          EncounterStatus @default(in_progress)
-  startTime       DateTime        @default(now()) @map("start_time") @db.Timestamptz(6)
-  endTime         DateTime?       @map("end_time") @db.Timestamptz(6)
-  chiefComplaint  String?         @map("chief_complaint")
-  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                         String          @id @db.Uuid
+  appointmentId              String?         @map("appointment_id") @db.Uuid
+  hospitalAppointmentId      String?         @map("hospital_appointment_id") @db.Uuid
+  privateClinicAppointmentId String?         @map("private_clinic_appointment_id") @db.Uuid
+  patientId                  String          @map("patient_id") @db.Uuid
+  doctorId                   String          @map("doctor_id") @db.Uuid
+  hospitalId                 String?         @map("hospital_id") @db.Uuid
+  encounterType              EncounterType   @default(ambulatory) @map("encounter_type")
+  status                     EncounterStatus @default(in_progress)
+  startTime                  DateTime        @default(now()) @map("start_time") @db.Timestamptz(6)
+  endTime                    DateTime?       @map("end_time") @db.Timestamptz(6)
+  chiefComplaint             String?         @map("chief_complaint")
+  createdAt                  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  appointment      Appointment?      @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  patient          Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  doctor           Doctor            @relation(fields: [doctorId], references: [id], onDelete: Restrict)
-  hospital         Hospital?         @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+  appointment              Appointment?               @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  hospitalAppointment      HospitalAppointment?      @relation(fields: [hospitalAppointmentId], references: [id], onDelete: SetNull)
+  privateClinicAppointment PrivateClinicAppointment? @relation(fields: [privateClinicAppointmentId], references: [id], onDelete: SetNull)
+  patient                  Patient                    @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  doctor                   Doctor                     @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  hospital                 Hospital?                  @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
   vitals           Vital[]
   clinicalNotes    ClinicalNote[]
   conditions       Condition[]
@@ -811,15 +1191,19 @@ model BillingRecord {
   // historical imported billing records that have no relational context.
   hospitalName  String?    @map("hospital_name") @db.VarChar(255)
   doctorName    String?    @map("doctor_name") @db.VarChar(255)
-  amount        Decimal    @db.Decimal(10, 2)
-  status        BillStatus @default(pending)
-  dueDate       DateTime?  @map("due_date") @db.Date
-  paidAt        DateTime?  @map("paid_at") @db.Timestamptz(6)
-  paymentMethod String?    @map("payment_method") @db.VarChar(100)
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  amount                     Decimal                   @db.Decimal(10, 2)
+  status                     BillStatus                @default(pending)
+  dueDate                    DateTime?                 @map("due_date") @db.Date
+  paidAt                     DateTime?                 @map("paid_at") @db.Timestamptz(6)
+  paymentMethod              String?                   @map("payment_method") @db.VarChar(100)
+  hospitalAppointmentId      String?                   @map("hospital_appointment_id") @db.Uuid
+  privateClinicAppointmentId String?                   @map("private_clinic_appointment_id") @db.Uuid
+  createdAt                  DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  patient                  Patient                    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment              Appointment?               @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  hospitalAppointment      HospitalAppointment?      @relation(fields: [hospitalAppointmentId], references: [id], onDelete: SetNull)
+  privateClinicAppointment PrivateClinicAppointment? @relation(fields: [privateClinicAppointmentId], references: [id], onDelete: SetNull)
 
   @@index([patientId])
   @@index([status])
@@ -884,18 +1268,22 @@ model MedicineOrderItem {
 
 model Notification {
   id            String    @id @db.Uuid
-  patientId     String    @map("patient_id") @db.Uuid
-  appointmentId String?   @map("appointment_id") @db.Uuid
-  type          String    @db.VarChar(20) // in_app, sms, email
-  status        String    @default("pending") @db.VarChar(20) // pending, sent, failed
-  message       String
-  recipient     String    @db.VarChar(255)
-  sentAt        DateTime? @map("sent_at") @db.Timestamptz(6)
-  error         String?
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  patientId                  String                    @map("patient_id") @db.Uuid
+  appointmentId              String?                   @map("appointment_id") @db.Uuid
+  hospitalAppointmentId      String?                   @map("hospital_appointment_id") @db.Uuid
+  privateClinicAppointmentId String?                   @map("private_clinic_appointment_id") @db.Uuid
+  type                       String                    @db.VarChar(20) // in_app, sms, email
+  status                     String                    @default("pending") @db.VarChar(20) // pending, sent, failed
+  message                    String
+  recipient                  String                    @db.VarChar(255)
+  sentAt                     DateTime?                 @map("sent_at") @db.Timestamptz(6)
+  error                      String?
+  createdAt                  DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  patient                  Patient                    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment              Appointment?               @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  hospitalAppointment      HospitalAppointment?      @relation(fields: [hospitalAppointmentId], references: [id], onDelete: SetNull)
+  privateClinicAppointment PrivateClinicAppointment? @relation(fields: [privateClinicAppointmentId], references: [id], onDelete: SetNull)
 
   @@index([patientId])
   @@map("notifications")
@@ -981,19 +1369,23 @@ model AccessLog {
   id            String   @id @db.Uuid
   patientId     String   @map("patient_id") @db.Uuid
   doctorId      String?  @map("doctor_id") @db.Uuid
-  appointmentId String?  @map("appointment_id") @db.Uuid
-  accessedById  String   @map("accessed_by_id") @db.Uuid
-  sessionId     String?  @map("session_id") @db.Uuid
-  action        String   @db.VarChar(100) // view_patient_profile, view_documents
-  status        String   @db.VarChar(32) // allowed, denied
-  reason        String?
-  accessedAt    DateTime @default(now()) @map("accessed_at") @db.Timestamptz(6)
+  appointmentId              String?                   @map("appointment_id") @db.Uuid
+  hospitalAppointmentId      String?                   @map("hospital_appointment_id") @db.Uuid
+  privateClinicAppointmentId String?                   @map("private_clinic_appointment_id") @db.Uuid
+  accessedById               String                    @map("accessed_by_id") @db.Uuid
+  sessionId                  String?                   @map("session_id") @db.Uuid
+  action                     String                    @db.VarChar(100) // view_patient_profile, view_documents
+  status                     String                    @db.VarChar(32) // allowed, denied
+  reason                     String?
+  accessedAt                 DateTime                  @default(now()) @map("accessed_at") @db.Timestamptz(6)
 
-  patient     Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  doctor      Doctor?              @relation(fields: [doctorId], references: [id], onDelete: SetNull)
-  appointment Appointment?         @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  accessedBy  User                 @relation("AccessLogTriggeredBy", fields: [accessedById], references: [id])
-  session     ConsultationSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  patient                  Patient                    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor                   Doctor?                    @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  appointment              Appointment?               @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  hospitalAppointment      HospitalAppointment?      @relation(fields: [hospitalAppointmentId], references: [id], onDelete: SetNull)
+  privateClinicAppointment PrivateClinicAppointment? @relation(fields: [privateClinicAppointmentId], references: [id], onDelete: SetNull)
+  accessedBy               User                       @relation("AccessLogTriggeredBy", fields: [accessedById], references: [id])
+  session                  ConsultationSession?       @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([patientId, accessedAt])
   @@map("access_logs")

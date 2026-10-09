@@ -137,3 +137,75 @@ export function toLegacyPatientDTO(
 ```
 
 This guarantees **100% backward compatibility** for all existing React views and hooks without requiring a single frontend change.
+
+---
+
+## 4. Appointment Domain Backward Compatibility Mappers (Phase 1.3)
+
+To ensure existing frontend views (`Appointments.jsx`, `Management.jsx`, `doctor-portal/queue`, `ConfirmAppointment.jsx`) continue working seamlessly while backend scheduling is partitioned across `HospitalAppointment` and `PrivateClinicAppointment`:
+
+### 4.1 Unified Appointment Presentation Adapter
+The backend service maps both `HospitalAppointment` and `PrivateClinicAppointment` records to the canonical JSON response expected by React:
+
+```typescript
+// Example in src/shared/mappers/appointment.mapper.ts
+export function toLegacyAppointmentDTO(
+  record: any, // HospitalAppointment | PrivateClinicAppointment | Appointment
+  doctor: any,
+  hospital?: any,
+  patient?: any
+) {
+  return {
+    _id: record.id,
+    id: record.id,
+    patient: patient ? {
+      _id: patient.id,
+      id: patient.id,
+      uid: patient.uid,
+      firstName: patient.firstName,
+      lastName: patient.lastName,
+      phone: patient.phone
+    } : record.patientId,
+    doctor: doctor ? {
+      _id: doctor.id,
+      id: doctor.id,
+      uid: doctor.uid,
+      firstName: doctor.firstName,
+      lastName: doctor.lastName,
+      specialization: doctor.specialization,
+      consultationFee: Number(record.totalFee || doctor.consultationFee || 500)
+    } : record.doctorId,
+    hospital: hospital ? {
+      _id: hospital.id,
+      id: hospital.id,
+      uid: hospital.uid,
+      name: hospital.name,
+      address: hospital.street ? `${hospital.street}, ${hospital.city}` : hospital.city
+    } : (record.hospitalId || record.clinicHospitalId || null),
+    appointmentDate: record.appointmentDate,
+    timeSlot: record.timeSlot,
+    status: record.status,
+    bookingMethod: record.bookingChannel ? record.bookingChannel.toLowerCase() : (record.bookingMethod || 'app'),
+    preferredContactMethod: record.preferredContactMethod || 'whatsapp',
+    contactPhone: record.contactPhone,
+    symptoms: record.symptoms,
+    notes: record.notes,
+    confirmToken: record.confirmToken,
+    confirmTokenUsed: record.confirmTokenUsed,
+    patientConfirmedAt: record.patientConfirmedAt,
+    confirmedAt: record.confirmedAt,
+    confirmationMethod: record.confirmationMethod,
+    billAmount: Number(record.totalFee || record.billAmount || 500),
+    billStatus: record.paymentHoldStatus === 'PAID' ? 'paid' : (record.billStatus || 'pending'),
+    // Phase 1.3 augmented fields preserved for modern clients
+    holdExpiresAt: record.holdExpiresAt,
+    paymentHoldStatus: record.paymentHoldStatus,
+    depositAmount: record.depositAmount ? Number(record.depositAmount) : undefined,
+    rescheduleCount: record.rescheduleCount || 0,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+}
+```
+
+This guarantees zero regressions across existing endpoints (`/api/appointments`, `/api/appointments/my`, `/api/appointments/hospital`, `/api/doctor-portal/queue`, `/api/doctor-portal/slots/available`).

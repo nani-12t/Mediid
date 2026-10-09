@@ -319,3 +319,94 @@ Appointment.hospitalId IS NOT NULL — always.
 - All appointment creation endpoints must validate that a `Hospital` record exists before persisting the appointment.
 - Phase 2.1 schema validation must enforce `hospitalId NOT NULL` at the database level (already done in `schema.prisma`).
 - Phase 2.3 must implement a clinic creation flow for independent private-practice doctor onboarding.
+
+---
+
+## ADR-014: Split Scheduling Domains (Hospital vs. Private Clinic) & Materialized Slots
+
+### Context
+In previous phases, `Appointment` conflated two distinct scheduling domains:
+1. Multi-physician, front-desk-managed institutional hospital scheduling.
+2. Solo or group practitioner-owned private clinic practices.
+Furthermore, virtual slot queries calculated availability on-the-fly from recurring day schedules (`DoctorSlot`), which allowed race conditions, double booking across multi-facility practices, and complex concurrency edge cases.
+
+### Decision
+1. **Separate Scheduling Domains**:
+   - `HospitalAppointment`: Front-desk managed, hospital organization bound (`hospitalId NOT NULL`). Confirmation modes: `DEPOSIT`, `TIME_BASED`, or `MANUAL`.
+   - `PrivateClinicAppointment`: Doctor-owned strictly. **Explicitly NO receptionist or front-desk role/portal**. Online bookings require a **mandatory 50% consultation deposit**.
+   - Both domains link to the shared Encounter/EHR system (`Encounter.hospitalAppointmentId` and `Encounter.privateClinicAppointmentId`), while `Encounter` also supports direct creation without any appointment (walk-in emergency or legacy records).
+   - Legacy `Appointment` is retained for historical/backward compatibility.
+2. **Materialized Appointment Slots (`MaterializedAppointmentSlot`)**:
+   - Discrete rows with channels `ONLINE`, `OFFLINE`, and `FLEXIBLE`.
+   - States: `AVAILABLE`, `HELD`, `BOOKED`, `BLOCKED`, `EXPIRED`.
+   - Unique constraint `@@unique([doctorId, slotStart])`: Prevents double booking the same doctor across hospital and clinic contexts at the database level.
+   - Slot templates (`RecurringAvailabilityTemplate`) and `ScheduleOverride` (leave, emergency block, custom hours, holidays) materialize into concrete slot records.
+   - Slot reopening: Cancelled or payment-expired slots automatically reset to `AVAILABLE` with incremented `reopenedCount` and `holdExpiresAt = null`.
+
+### Rationale
+- Completely isolates the hospital front-desk workflow from private doctor operations.
+- Strong ACID relational uniqueness (`doctorId, slotStart`) prevents practitioner scheduling conflicts across multiple hospitals or clinics.
+- Eliminates on-the-fly slot calculation races.
+
+### Consequences
+- Scheduling engines book against `MaterializedAppointmentSlot` rows using `SELECT ... FOR UPDATE` row locks.
+
+---
+
+## ADR-015: Dynamic Payment Deadlines, Late-Booking Cutoffs & Hold Expiry
+
+### Context
+Fixed payment hold windows (e.g. 60 minutes) cause invalid states when an appointment is booked near its start time (e.g. 20 minutes before). A fixed 60-minute hold would expire *after* the appointment starts.
+
+### Decision
+Define a dynamic payment deadline calculation:
+$$\text{holdDuration} = \min\left(60\text{ min},\; \text{slotStart} - \text{now} - 10\text{ min safety cutoff}\right)$$
+
+1. **Standard Window**: 60 minutes when booking well in advance.
+2. **Safety Cutoff**: Online bookings close 10 minutes before `slotStart` ($\text{leadTime} \le 10\text{ min} \implies \text{rejected}$).
+3. **Fast-Confirm Window**: When lead time is between 10 and 15 minutes before slot start:
+   $$\text{leadTime} \in (10\text{ min}, 15\text{ min}] \implies \text{holdDuration} = 5\text{ min fast-confirm}$$
+4. **Boundary Invariant**:
+   - If lead time $< 10$ minutes: Online booking is closed. Returns HTTP 400 (`BOOKING_CLOSED_SAFETY_CUTOFF`).
+   - If computed payment deadline $\le \text{now}$: **NEVER create an expired or zero-duration hold**. The booking transaction aborts immediately.
+5. **Offline & Walk-in Exemption**: Offline/walk-in appointments do not require online payment holds (`paymentHoldStatus = NONE`).
+
+### Rationale
+- Prevents holds lingering into clinical consultation time.
+- Guarantees doctors and patients have definitive slot confirmation before the visit starts.
+
+---
+
+## ADR-016: Provider-Configurable Cancellation, Refund Policy & Audit Integrity
+
+### Context
+Cancellations and refunds require provider flexibility while protecting patient rights. Provider-initiated cancellations must not penalize patients.
+
+### Decision
+1. **Configurable Policies**:
+   - Hospitals configure cancellation and reschedule cutoff hours via `HospitalSchedulingRule`.
+   - Private clinic doctors configure cutoffs, reschedule limits, and no-show fee deductions via `DoctorClinicPolicy`.
+2. **Provider-Initiated Cancellations**:
+   - When cancelled by `DOCTOR` or `HOSPITAL_FRONT_DESK`, the platform guarantees **100% full refund** of any amount paid or offers an explicitly agreed transfer credit (`TRANSFER_CREDIT_OFFERED`).
+3. **Refund Transactions & Payment History Preservation**:
+   - Never overwrite or mutate original payment records.
+   - Refund details are recorded in dedicated fields (`refundStatus`, `refundAmount`, `refundTransactionRef`) and linked to `BillingRecord` maintaining full audit history.
+4. **Rescheduling**:
+   - Allowed up to provider-configured cutoff (`maxRescheduleCount`). Previous slot is reopened to `AVAILABLE`, and new slot is reserved atomically.
+
+---
+
+## ADR-017: SUPPORT_ASSISTED Bookings & Restricted Clinical Access
+
+### Context
+Customer support agents assist patients with scheduling and billing issues via phone or chat. Unrestricted support access risks exposing protected health information (PHI).
+
+### Decision
+1. **Role**: Dedicated `support_agent` in `UserRole` enum.
+2. **Booking Permissions**:
+   - Can book on behalf of patients (`bookingChannel = SUPPORT_ASSISTED`, tracking `bookedByUserId`).
+   - Must strictly respect all provider scheduling rules and cancellation cutoffs; **support agents cannot bypass provider policies**.
+3. **Clinical Access Restriction**:
+   - Support agents are strictly forbidden from viewing clinical EHR data (SOAP notes, vitals, conditions, lab results, prescriptions).
+   - Restricted to administrative/scheduling metadata and billing receipts.
+   - Every support action is logged in `access_logs` with `action = support_assisted_booking`.

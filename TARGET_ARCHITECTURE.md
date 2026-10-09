@@ -227,3 +227,57 @@ The Node.js Express backend remains the single source of truth for client applic
                                                   - Clinical NLP / Entity Extraction
                                                   - RAG & Medical Assistant
 ```
+
+---
+
+## 8. Final Appointment Architecture Freeze (Phase 1.3)
+
+### 8.1 Domain Split: Hospital vs. Private Clinic Scheduling
+Scheduling is partitioned into two specialized domain models, both converging on the longitudinal `Encounter` / EHR platform:
+
+1. **Hospital Scheduling (`hospital_appointments`)**:
+   - **Governance**: Managed by Hospital Front Desk (`HospitalStaff` with role `receptionist` or `administrator`).
+   - **Confirmation Modes**: Configured via `hospital_scheduling_rules` as `DEPOSIT`, `TIME_BASED` (auto-confirm if deposit hold completes), or `MANUAL` (front-desk staff review).
+   - **Org Context**: `hospitalId` is mandatory (`NOT NULL`).
+
+2. **Private Clinic Scheduling (`private_clinic_appointments`)**:
+   - **Governance**: Strictly **Doctor-Owned**. No clinic receptionist role or portal exists. The doctor directly manages slots, appointments, and consultations.
+   - **Mandatory 50% Consultation Deposit**: Online bookings enforce a 50% deposit requirement upfront before confirmation.
+   - **Org Context**: `clinicHospitalId` is optional; independent practitioners can operate clinic practices without complex multi-bed hospital entities.
+
+3. **Decoupled Longitudinal Encounters**:
+   - Every `Encounter` maintains nullable FKs to both `HospitalAppointment` and `PrivateClinicAppointment`.
+   - Direct encounters can be initialized without any pre-existing appointment (walk-in emergency or legacy chart ingestion).
+
+### 8.2 Materialized Slots & Concurrency Protection
+To eliminate race conditions and double bookings across multiple affiliated institutions:
+- **`materialized_appointment_slots`**: Pre-generated slot rows representing exact calendar intervals with `ONLINE`, `OFFLINE`, and `FLEXIBLE` channels.
+- **Cross-Facility Doctor Uniqueness**: Enforced via PostgreSQL unique constraint `@@unique([doctorId, slotStart])`. A doctor can never be booked simultaneously at a hospital and a private clinic.
+- **Transactional Slot Reservation**:
+  ```sql
+  BEGIN;
+  SELECT * FROM materialized_appointment_slots 
+  WHERE id = :slotId AND state = 'AVAILABLE' 
+  FOR UPDATE;
+  
+  UPDATE materialized_appointment_slots 
+  SET state = 'HELD', hold_expires_at = :deadline, held_by_user_id = :userId, version = version + 1
+  WHERE id = :slotId;
+  COMMIT;
+  ```
+- **Slot Reopening**: Cancelled bookings or payment holds that expire release the slot back to `AVAILABLE`, resetting `holdExpiresAt = null` and incrementing `reopenedCount`.
+
+### 8.3 Dynamic Payment Deadlines & Safety Cutoffs
+Payment holds are dynamically calculated to prevent holds extending past appointment start times:
+- **Standard Hold Window**: 60 minutes for advance bookings.
+- **10-Minute Safety Cutoff**: Online booking closes exactly 10 minutes prior to `slotStart`.
+- **Fast-Confirm Window**: When lead time is between 10 and 15 minutes before slot start, the payment hold is set to exactly 5 minutes:
+  $$\text{holdDeadline} = \min(\text{now} + 60\text{m},\; \text{slotStart} - 10\text{m},\; \text{now} + 5\text{m for late-bookings})$$
+- **Boundary Invariant**: If computed hold window $\le 0$, the reservation transaction aborts; zero-duration or expired holds are never created.
+- **Offline / Walk-In**: In-person walk-ins and phone desk bookings bypass payment holds (`paymentHoldStatus = NONE`).
+
+### 8.4 Configurable Cancellation, Refund History & Audit
+- **Provider Policy Snapshots**: Booking transactions freeze a JSON snapshot (`policySnapshot`) capturing active refund and cancellation parameters at booking time.
+- **Provider-Initiated Cancellations**: When cancelled by doctor or front desk, the patient receives a 100% full refund or mutually agreed transfer credit (`TRANSFER_CREDIT_OFFERED`).
+- **Payment History Preservation**: Refund amounts and gateway references (`refundAmount`, `refundTransactionRef`) are appended to billing records without overwriting original payment transaction history.
+- **SUPPORT_ASSISTED Bookings**: Support agents (`support_agent` role) can book appointments on behalf of patients (`bookingChannel = SUPPORT_ASSISTED`). Support agents cannot bypass provider cancellation/deposit rules and are strictly forbidden from viewing patient clinical EHR records (clinical notes, vitals, lab results).
