@@ -3,7 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const { connectDB, getMarketplaceConn } = require('./config/db');
-dotenv.config({ path: require('path').join(__dirname, '.env') });
+dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || require('path').join(__dirname, '.env') });
 
 const app = express();
 

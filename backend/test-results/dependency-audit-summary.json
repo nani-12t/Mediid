@@ -1,0 +1,11 @@
+{
+  "vulnerabilities": {
+    "info": 0,
+    "low": 1,
+    "moderate": 5,
+    "high": 18,
+    "critical": 2,
+    "total": 26
+  },
+  "note": "Dependency risk assessment remains outside this schema phase; no forced upgrades performed."
+}

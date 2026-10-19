@@ -410,3 +410,11 @@ Customer support agents assist patients with scheduling and billing issues via p
    - Support agents are strictly forbidden from viewing clinical EHR data (SOAP notes, vitals, conditions, lab results, prescriptions).
    - Restricted to administrative/scheduling metadata and billing receipts.
    - Every support action is logged in `access_logs` with `action = support_assisted_booking`.
+
+## Phase 1.3.1 amendment: appointment and financial integrity
+
+This supersedes Phase 1.3 single-holder slot logic and start-time-only uniqueness. Slots use retained per-booking seat reservations and GiST interval exclusion across hospital/clinic contexts. Booking source and selected online/offline channel are independent. Operational slot matching and own reservation requirements are executable SQL.
+
+Payment/refund ledgers retain immutable financial identity and state-change snapshots, idempotency, Decimal/currency identity and atomic refund allocation against captures. Cancellation releases only its own reservation, independently of refunds. Provider cancellation defaults to full refund; transfer requires patient approval.
+
+The authoritative SQL/deadline contract is backend/prisma/SQL_CONSTRAINTS.md. Direct encounters remain valid; mixed appointment references fail. This approves Phase 1.3.1 schema changes only. MongoDB remains primary; Phase 2.1 is not started.
