@@ -55,12 +55,28 @@ cp .env.example .env
 # Edit .env with your MongoDB URI and JWT secret
 ```
 
+On Windows PowerShell, run these commands from the backend directory:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+Set MONGO_URI to your MongoDB connection string and JWT_SECRET to a long random
+secret. The example URI requires MongoDB running locally on port 27017. For Atlas,
+use your own cluster URI and credentials. Do not commit .env. MARKETPLACE_URI is
+optional; by default the marketplace uses the same MongoDB server with the
+mediid_marketplace database. The server waits for both databases before listening.
+
+Run the database startup regression checks from backend with
+`node --test tests/db-config.test.cjs`.
+
 ### 3. Run the app
 
 ```bash
 # Terminal 1 — Backend
 cd backend
-npm run dev   # starts on http://localhost:5000
+npm run dev   # starts on http://localhost:5001 with the example configuration
 
 # Terminal 2 — Frontend
 cd frontend
@@ -164,3 +180,19 @@ GET    /api/insurance            Insurance agencies & plans
 ---
 
 Built with ❤️ for India's healthcare future.
+
+### Local port conflicts
+
+Copy backend/.env.example to backend/.env and set a long random JWT_SECRET.
+The example uses local MongoDB and PORT=5001. Copy frontend/.env.example to
+frontend/.env.local to use REACT_APP_API_URL=http://localhost:5001/api.
+Local .env files are ignored by Git and must be configured on each machine.
+Restart the frontend development server after changing this value. Both values
+must match. If the port is occupied, stop the existing instance or choose a free
+port in both files. Startup reports bind errors before starting background jobs.
+
+Run startup checks from backend:
+
+```powershell
+node --test tests/db-config.test.cjs tests/listen.test.cjs
+```

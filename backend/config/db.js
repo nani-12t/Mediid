@@ -11,13 +11,24 @@ try {
 // Global reference for secondary connection
 let marketplaceConn = null;
 
+function requireMongoUri(name) {
+    const value = process.env[name]?.trim();
+    if (!value) {
+        throw new Error(name + ' is required. Create backend/.env from backend/.env.example and configure your MongoDB connection.');
+    }
+    if (!/^mongodb(?:\+srv)?:\/\//.test(value)) {
+        throw new Error(name + ' must start with mongodb:// or mongodb+srv://.');
+    }
+    return value;
+}
+
 const connectDB = async () => {
     if (mongoose.connection.readyState >= 1) {
         return mongoose.connection;
     }
 
     try {
-        const conn = await mongoose.connect(process.env.MONGO_URI, {
+        const conn = await mongoose.connect(requireMongoUri('MONGO_URI'), {
             serverSelectionTimeoutMS: 5000, 
             socketTimeoutMS: 45000,
             family: 4,
@@ -25,7 +36,6 @@ const connectDB = async () => {
         console.log(`✅ Primary MongoDB Connected: ${conn.connection.host}`);
         return conn.connection;
     } catch (error) {
-        console.error(`❌ Primary MongoDB Connection Error: ${error.message}`);
         throw error;
     }
 };
@@ -33,11 +43,12 @@ const connectDB = async () => {
 const getMarketplaceConn = () => {
     if (marketplaceConn) return marketplaceConn;
     
-    // Derive marketplace URI by replacing the DB name if not explicitly provided
-    const mainUri = process.env.MONGO_URI;
-    const marketplaceUri = process.env.MARKETPLACE_URI || mainUri.replace(/\/[^/?]+(\?|$)/, '/mediid_marketplace$1');
+    // dbName also handles a primary URI with no database path.
+    const explicitMarketplace = Boolean(process.env.MARKETPLACE_URI?.trim());
+    const marketplaceUri = requireMongoUri(explicitMarketplace ? 'MARKETPLACE_URI' : 'MONGO_URI');
     
     marketplaceConn = mongoose.createConnection(marketplaceUri, {
+        ...(explicitMarketplace ? {} : { dbName: 'mediid_marketplace' }),
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
         family: 4
