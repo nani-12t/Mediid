@@ -176,3 +176,9 @@ During Stage D:
 2. **Worker Synchronization**: A BullMQ worker consumes outbox events and executes the corresponding Prisma write.
 3. **Idempotency**: All PostgreSQL writes use `upsert` keyed on the deterministic UUIDv5, preventing duplicate record creation on worker retries.
 4. **Failure Alerting**: If a synchronization event fails after 5 retries, it is placed in a dead-letter queue (DLQ) with an immediate administrator alert.
+
+## Phase 1.3.1 compatibility amendment
+
+The frozen UUIDv5 namespace remains 57c0c744-9cdc-41f9-a532-7e60be63d87f. Preserve public MEDIID UIDs separately from internal UUIDs. Historical appointments without reliable times remain in legacy appointments; do not infer timestamps from display strings or create fictitious slots. Reliable historical domain imports can use immutable legacySourceId plus legacyImportedAt only through the reviewed migration writer.
+
+For an empty PostgreSQL database, apply both committed Phase 1.3.1 migrations in order. The second contains essential checks, GiST exclusion, triggers and partial indexes. Provision pgvector and btree_gist first. An existing populated target requires separate reviewed reconciliation/backfill and conflict audits. No production migration or data copying occurred. See backend/prisma/SQL_CONSTRAINTS.md. Phase 2.1 is not started.

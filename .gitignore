@@ -9,3 +9,5 @@ build/
 .env.local
 *.log
 .vscode/
+# Disposable synthetic database binaries/data only
+backend/.test-data/

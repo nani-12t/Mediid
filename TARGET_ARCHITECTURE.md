@@ -281,3 +281,9 @@ Payment holds are dynamically calculated to prevent holds extending past appoint
 - **Provider-Initiated Cancellations**: When cancelled by doctor or front desk, the patient receives a 100% full refund or mutually agreed transfer credit (`TRANSFER_CREDIT_OFFERED`).
 - **Payment History Preservation**: Refund amounts and gateway references (`refundAmount`, `refundTransactionRef`) are appended to billing records without overwriting original payment transaction history.
 - **SUPPORT_ASSISTED Bookings**: Support agents (`support_agent` role) can book appointments on behalf of patients (`bookingChannel = SUPPORT_ASSISTED`). Support agents cannot bypass provider cancellation/deposit rules and are strictly forbidden from viewing patient clinical EHR records (clinical notes, vitals, lab results).
+
+## Phase 1.3.1 hardening amendment
+
+The executable specification is backend/prisma/SQL_CONSTRAINTS.md and its committed migrations. Replace single-holder logic with AppointmentSlotReservation rows and shared cross-domain capacity. Active doctor intervals use GiST exclusion. AppointmentPayment and AppointmentRefund retain attempts, captures, partial refunds and audited history. Runtime PostgreSQL services/access guards are deferred; MongoDB routes remain primary.
+
+Provider policies explicitly include 60/10/20/5/10-minute deadline defaults, configurable hospital confirmation lead of 40 minutes, 50 percent clinic online deposit, structured cancellation/rescheduling/no-show rules, and patient-approved transfers. Policy snapshots freeze booking terms. Operational bookings need matching slots and own reservations; legacy exceptions are explicit.
