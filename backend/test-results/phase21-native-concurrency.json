@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "engine": "PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit",
+  "independentBackendPids": [
+    31412,
+    9204
+  ],
+  "passed": 4,
+  "checks": [
+    "competing hospital/clinic connections cannot acquire the same seat",
+    "competing refunds cannot exceed capture under READ COMMITTED",
+    "competing refunds cannot exceed capture under REPEATABLE READ",
+    "independent parent edit cannot race a clinical link at REPEATABLE READ"
+  ],
+  "synthetic": true,
+  "productionAccess": false,
+  "unusedVectorDeclarationOmitted": false,
+  "fullUnmodifiedNativeMigrationGate": "PASS"
+}

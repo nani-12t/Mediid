@@ -1,0 +1,120 @@
+{
+  "phase": "2.1",
+  "reviewedBase": "5a59c41e7a68428a2697f988611785134c9e5782",
+  "branch": "feature/phase-2.1-postgres-infrastructure",
+  "status": "READY FOR EXTERNAL REVIEW",
+  "synthetic": true,
+  "productionAccess": false,
+  "native": {
+    "engine": "PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit",
+    "extensions": [
+      {
+        "extname": "btree_gist",
+        "extversion": "1.8"
+      },
+      {
+        "extname": "vector",
+        "extversion": "0.8.2"
+      }
+    ],
+    "phase131ExactGate": "CLOSED",
+    "historicalFilesExecutedWithoutSqlChanges": true,
+    "migrations": {
+      "202610190001_phase131_baseline": {
+        "sha256Lf": "396265dd3b6166940685e63bcf4092409d559ba27ed5bb2e16c94261f527261b",
+        "historicalUnchanged": true,
+        "prismaDeploy": "PASS"
+      },
+      "202610190002_phase131_constraints": {
+        "sha256Lf": "41735475934657a89254e611db2558131fe50b7f6d9928aa75aae2be582b7ace",
+        "historicalUnchanged": true,
+        "prismaDeploy": "PASS"
+      },
+      "202610200001_phase131_review": {
+        "sha256Lf": "9446c65e75f040172a3d06d540344f6c4e1518dba4f27741ddf72e1d869037ce",
+        "historicalUnchanged": true,
+        "prismaDeploy": "PASS"
+      },
+      "202610200002_phase21_infrastructure_permissions": {
+        "sha256Lf": "417906c165c85ebc0c4a09eb16dd7f0e0f4164f199e9362231a9e63bff49aef6",
+        "historicalUnchanged": null,
+        "prismaDeploy": "PASS"
+      }
+    },
+    "concurrentIndependentConnections": true,
+    "concurrencyChecks": 4,
+    "schemaChecks": 27,
+    "reviewChecks": 70,
+    "infrastructureChecks": 24,
+    "allDisposableClustersStopped": true
+  },
+  "checks": {
+    "prismaVersion": "6.19.3",
+    "prismaValidate": "PASS",
+    "prismaGenerate": "PASS",
+    "typescriptCheck": "PASS",
+    "typescriptBuild": "PASS",
+    "configurationIdentifierUnitTests": {
+      "status": "PASS",
+      "passed": 10
+    },
+    "defaultPGliteRegressions": {
+      "status": "PASS",
+      "schema": 27,
+      "review": 70,
+      "multiSession": false
+    },
+    "mongoExpress": {
+      "status": "PASS",
+      "version": "7.0.30",
+      "runnerPasses": 12
+    },
+    "frontendProductionBuild": {
+      "status": "PASS",
+      "warnings": [
+        "Browserslist data is old",
+        "Node fs.F_OK deprecation"
+      ]
+    },
+    "apiCompatibility": {
+      "status": "PASS",
+      "evidence": "Express server/routes/models and frontend/src unchanged from reviewed main; Mongo/Express HTTP regressions passed"
+    }
+  },
+  "audits": {
+    "backend": {
+      "info": 0,
+      "low": 1,
+      "moderate": 5,
+      "high": 18,
+      "critical": 2,
+      "total": 26
+    },
+    "frontend": {
+      "info": 0,
+      "low": 5,
+      "moderate": 19,
+      "high": 78,
+      "critical": 3,
+      "total": 105
+    },
+    "evidence": "security/audits/phase21",
+    "forcedUpgrades": false
+  },
+  "pgvectorBuild": {
+    "version": "0.8.2",
+    "source": "https://codeload.github.com/pgvector/pgvector/zip/refs/tags/v0.8.2",
+    "archiveSha256": "f218184e82d6307ed12839955e6f8ad70bdb1afa6e9a343507c16d6ea5cbbf15",
+    "systemExtensionFilesModified": false
+  },
+  "notExecuted": [
+    "Production TLS-chain verification",
+    "Managed pooler integration",
+    "Production-scale load",
+    "Production deployment"
+  ],
+  "operationalPrimary": "MongoDB",
+  "businessCutover": false,
+  "dualWrites": false,
+  "phase22": "NOT STARTED"
+}

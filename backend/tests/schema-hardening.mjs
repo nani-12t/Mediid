@@ -1,10 +1,8 @@
-import { PGlite } from '@electric-sql/pglite';
-import { vector } from '@electric-sql/pglite/vector';
-import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist';
+import {createSchemaDatabase,schemaReportUrl} from './helpers/schema-database.mjs';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
-const db = new PGlite({ extensions: { vector, btree_gist } });
+const db = await createSchemaDatabase();
 const results=[];
 async function check(name,fn){ await fn(); results.push(name); console.log('PASS: '+name); }
 const id=()=>randomUUID();
@@ -119,6 +117,6 @@ try {
   await fail(()=>payment(b1,{provider_transaction_ref:null}));
  });
  mkdirSync(new URL('../test-results/',import.meta.url),{recursive:true});
- writeFileSync(new URL('../test-results/phase131-postgres.json',import.meta.url),JSON.stringify({engine:(await q('SELECT version()')).rows[0].version,passed:results.length,checks:results,synthetic:true,productionAccess:false},null,2)+'\n');
+ writeFileSync(schemaReportUrl('phase131-postgres.json'),JSON.stringify({engine:(await q('SELECT version()')).rows[0].version,passed:results.length,checks:results,synthetic:true,productionAccess:false},null,2)+'\n');
  console.log(results.length+' PostgreSQL checks passed.');
 } catch(error) { console.error('FAIL:', error.message, error.code || '', error.where || ''); process.exitCode=1; } finally { await db.close(); }

@@ -1,11 +1,9 @@
-import {PGlite} from '@electric-sql/pglite';
-import {vector} from '@electric-sql/pglite/vector';
-import {btree_gist} from '@electric-sql/pglite/contrib/btree_gist';
+import {createSchemaDatabase,schemaReportUrl} from './helpers/schema-database.mjs';
 import {readFileSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import {fixtures,insert,id,originals,corrective} from './helpers/review-fixtures.mjs';
 const baseline=process.argv.includes('--reproduce');
-const db=new PGlite({extensions:{vector,btree_gist}});
+const db=await createSchemaDatabase();
 const results=[];
 const sql=name=>readFileSync(new URL('../prisma/migrations/'+name+'/migration.sql',import.meta.url),'utf8');
 async function check(name,fn){await fn();results.push(name);console.log((baseline?'REPRODUCED invalid write accepted: ':'PASS: ')+name);}
@@ -70,7 +68,7 @@ try{
   await check('genuine slot reschedule takes a new snapshot and deadline atomically',async()=>{const next=await f.slot();await db.transaction(async tx=>{await tx.query("UPDATE appointment_slot_reservations SET status='RELEASED',released_at=now() WHERE private_clinic_appointment_id=$1",[online.id]);const b=(await tx.query('UPDATE private_clinic_appointments SET slot_id=$1,slot_start_time=$2,slot_end_time=$3,policy_snapshot=$4 WHERE id=$5 RETURNING *',[next.id,next.slot_start,next.slot_end,{paymentHoldWindowMinutes:30},online.id])).rows[0];await f.reserve(tx,b,'clinic',next);assert.notEqual(+new Date(b.booked_at),+new Date(online.booked_at));assert.equal(+new Date(b.hold_expires_at)-+new Date(b.booked_at),1800000);});});
  }
  if(!baseline){
-  const dirty=new PGlite({extensions:{vector,btree_gist}});
+  const dirty=await createSchemaDatabase();
   try{
    for(const m of originals)await dirty.exec(sql(m));
    const g=await fixtures(dirty);const parent=await g.historical('legacy');
@@ -87,6 +85,6 @@ try{
    });
   }finally{await dirty.close();}
  }
- writeFileSync(new URL('../test-results/phase131-review-'+(baseline?'reproduction':'postgres')+'.json',import.meta.url),JSON.stringify({mode:baseline?'original migrations: reproduced accepted invalid writes':'all three migrations: corrective checks',engine:(await db.query('SELECT version()')).rows[0].version,passed:results.length,checks:results,multiSession:false,synthetic:true},null,2)+'\n');
+ writeFileSync(schemaReportUrl('phase131-review-'+(baseline?'reproduction':'postgres')+'.json'),JSON.stringify({mode:baseline?'original migrations: reproduced accepted invalid writes':'all three migrations: corrective checks',engine:(await db.query('SELECT version()')).rows[0].version,passed:results.length,checks:results,multiSession:false,synthetic:true},null,2)+'\n');
  console.log(results.length+' '+(baseline?'defects reproduced':'review checks passed'));
 }catch(error){console.error('FAIL:',error.message,error.code||'',error.where||'');process.exitCode=1;}finally{await db.close();}

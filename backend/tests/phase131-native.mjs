@@ -1,6 +1,7 @@
 import pg from 'pg';
+import {randomBytes} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {existsSync,mkdirSync,mkdtempSync,readFileSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdirSync,mkdtempSync,readFileSync,writeFileSync,appendFileSync} from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import assert from 'node:assert/strict';
@@ -9,29 +10,27 @@ const {Client}=pg;
 const results=[];
 const binary=process.env.MEDIID_TEST_PG_BIN || (process.platform==='win32'?path.join(process.env.ProgramFiles||'C:/Program Files','PostgreSQL','18','bin'):null);
 const exe=name=>path.join(binary,name+(process.platform==='win32'?'.exe':''));
-const report=new URL('../test-results/phase131-review-native.json',import.meta.url);
-if(!binary||!existsSync(exe('initdb'))){writeFileSync(report,JSON.stringify({status:'NOT EXECUTED',reason:'Native initdb/pg_ctl unavailable; set MEDIID_TEST_PG_BIN.',phase21Gate:true},null,2)+'\n');console.log('NOT EXECUTED: native PostgreSQL unavailable; Phase 2.1 gate retained.');process.exit(0);}
+const report=new URL('../test-results/phase21-native-concurrency.json',import.meta.url);
+if(!binary||!existsSync(exe('initdb'))){writeFileSync(report,JSON.stringify({status:'NOT EXECUTED',reason:'Native initdb/pg_ctl unavailable; set MEDIID_TEST_PG_BIN.',phase21Gate:true},null,2)+'\n');console.log('NOT EXECUTED: native PostgreSQL unavailable; Phase 2.1 gate retained.');process.exit(1);}
 const testRoot=path.resolve('.test-data');mkdirSync(testRoot,{recursive:true});const cluster=mkdtempSync(path.join(testRoot,'pg-review-'));const data=path.join(cluster,'data');
 const lease=net.createServer();await new Promise(resolve=>lease.listen(0,'127.0.0.1',resolve));const port=lease.address().port;await new Promise(resolve=>lease.close(resolve));
-let started=false;const clients=[];let vectorOmitted=false;
+const password=randomBytes(32).toString('hex'),pwfile=path.join(cluster,'password');writeFileSync(pwfile,password+'\n',{mode:0o600});
+let started=false;const clients=[];
 const env={...process.env};for(const k of Object.keys(env))if(k.startsWith('PG'))delete env[k];
 const command=(name,args)=>execFileSync(exe(name),args,{env,encoding:'utf8',windowsHide:true,timeout:60000,stdio:'ignore'});
-async function client(){const c=new Client({host:'127.0.0.1',port,user:'synthetic_review',database:'postgres',connectionTimeoutMillis:5000,statement_timeout:15000});await c.connect();clients.push(c);return c;}
+async function client(){const c=new Client({host:'127.0.0.1',port,user:'synthetic_review',password,database:'postgres',connectionTimeoutMillis:5000,statement_timeout:15000});await c.connect();clients.push(c);return c;}
 async function blocked(observer,pid,by){const until=Date.now()+8000;while(Date.now()<until){const r=await observer.query('SELECT $1::int=ANY(pg_blocking_pids($2::int)) blocked',[by,pid]);if(r.rows[0].blocked)return;await new Promise(resolve=>setTimeout(resolve,25));}throw new Error('Expected independent connection lock was not observed');}
 async function check(name,fn){await fn();results.push(name);console.log('PASS native: '+name);}
 try{
- command('initdb',['-D',data,'-U','synthetic_review','-A','trust','--encoding=UTF8','--no-locale']);
+ command('initdb',['-D',data,'-U','synthetic_review','-A','scram-sha-256','--pwfile='+pwfile,'--encoding=UTF8','--no-locale']);
+ const ext=process.env.MEDIID_TEST_EXTENSION_ROOT||path.resolve('.test-data/pgvector-build/staged');
+ if(existsSync(path.join(ext,'extension/vector.control')))appendFileSync(path.join(data,'postgresql.conf'),"\nextension_control_path = '"+ext.replaceAll('\\','/').replaceAll("'","''")+";$system'\n");
  started=true;command('pg_ctl',['-D',data,'-l',path.join(cluster,'server.log'),'-o','-h 127.0.0.1 -p '+port,'-w','start']);started=true;
  const observer=await client(),a=await client(),b=await client();
  const pida=(await a.query('SELECT pg_backend_pid() pid')).rows[0].pid,pidb=(await b.query('SELECT pg_backend_pid() pid')).rows[0].pid;assert.notEqual(pida,pidb);
- const vector=(await observer.query("SELECT name FROM pg_available_extensions WHERE name='vector'")).rows.length>0;
+ assert.equal((await observer.query("SELECT name FROM pg_available_extensions WHERE name='vector'")).rows.length,1,'Real pgvector is required');
  for(const name of [...originals,corrective]){
-  let sql=readFileSync(new URL('../prisma/migrations/'+name+'/migration.sql',import.meta.url),'utf8');
-  if(!vector && name===originals[0]){
-   // Only an unused extension declaration is omitted; every table/index/trigger stays exact.
-   assert.equal((sql.match(/vector/g)||[]).length,1,'Vector is now used by schema: run with pgvector installed');
-   sql=sql.replace(/^CREATE EXTENSION IF NOT EXISTS "vector";\r?$/m,'-- Native environment lacks unused pgvector extension.');vectorOmitted=true;
-  }
+  const sql=readFileSync(new URL('../prisma/migrations/'+name+'/migration.sql',import.meta.url),'utf8');
   await observer.query(sql);
  }
  const db={query:(s,args)=>observer.query(s,args),transaction:async fn=>{await observer.query('BEGIN');try{const r=await fn(observer);await observer.query('COMMIT');return r;}catch(error){await observer.query('ROLLBACK');throw error;}}};
@@ -58,6 +57,6 @@ try{
   const edit=b.query('UPDATE appointments SET patient_id=$1 WHERE id=$2',[f.patient2,parent.id]).then(()=>({accepted:true}),error=>({error}));await blocked(observer,pidb,pida);await a.query('COMMIT');const outcome=await edit;assert.equal(outcome.error?.code,'40001');await b.query('ROLLBACK');
   assert.equal((await observer.query('SELECT patient_id FROM appointments WHERE id=$1',[parent.id])).rows[0].patient_id,f.patient);
  });
- writeFileSync(report,JSON.stringify({status:'PASS',engine:(await observer.query('SELECT version()')).rows[0].version,independentBackendPids:[pida,pidb],passed:results.length,checks:results,synthetic:true,productionAccess:false,unusedVectorDeclarationOmitted:vectorOmitted,fullUnmodifiedNativeMigrationGate:vectorOmitted?'NOT EXECUTED: install pgvector before Phase 2.1':'PASS'},null,2)+'\n');
+ writeFileSync(report,JSON.stringify({status:'PASS',engine:(await observer.query('SELECT version()')).rows[0].version,independentBackendPids:[pida,pidb],passed:results.length,checks:results,synthetic:true,productionAccess:false,unusedVectorDeclarationOmitted:false,fullUnmodifiedNativeMigrationGate:'PASS'},null,2)+'\n');
 }catch(error){console.error('FAIL native:',error.message,error.code||'');process.exitCode=1;writeFileSync(report,JSON.stringify({status:'FAILED',error:error.message,checks:results},null,2)+'\n');}
 finally{await Promise.allSettled(clients.map(c=>c.end()));if(started)command('pg_ctl',['-D',data,'-m','immediate','-w','stop']);}
