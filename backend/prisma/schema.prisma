@@ -136,6 +136,7 @@ model Hospital {
 
   @@index([city])
   @@index([isActive])
+  clinicalSessions ConsultationSession[] @relation("ConsultationHospitalContext")
   @@map("hospitals")
 }
 
@@ -681,6 +682,8 @@ enum AppointmentStatus {
 // For a truly independent private-practice doctor not yet affiliated with any
 // organization, a clinic Hospital record must be created first.
 model Appointment {
+  // Common-row write serializes clinical link creation with parent context edits.
+  clinicalContextVersion Int @default(0) @map("clinical_context_version")
   id                     String            @id @db.Uuid
   patientId              String            @map("patient_id") @db.Uuid
   doctorId               String            @map("doctor_id") @db.Uuid
@@ -726,6 +729,8 @@ model Appointment {
 
 model ConsultationSession {
   id                           String                    @id @db.Uuid
+  hospitalId String? @map("hospital_id") @db.Uuid
+  hospital Hospital? @relation("ConsultationHospitalContext", fields: [hospitalId], references: [id], onDelete: Restrict)
   patientId                    String                    @map("patient_id") @db.Uuid
   doctorId                     String                    @map("doctor_id") @db.Uuid
   appointmentId                String?                   @map("appointment_id") @db.Uuid // Nullable to support domain split
@@ -754,6 +759,8 @@ model ConsultationSession {
 
 // Hospital Appointment: Managed by Front Desk, supports DEPOSIT, TIME_BASED, MANUAL
 model HospitalAppointment {
+  // Common-row write serializes clinical link creation with parent context edits.
+  clinicalContextVersion Int @default(0) @map("clinical_context_version")
   id                     String            @id @db.Uuid
   patientId              String            @map("patient_id") @db.Uuid
   doctorId               String            @map("doctor_id") @db.Uuid
@@ -845,6 +852,8 @@ model HospitalAppointment {
 // Private Clinic Appointment: Doctor-owned strictly (NO receptionist role)
 // Online bookings require mandatory 50% deposit
 model PrivateClinicAppointment {
+  // Common-row write serializes clinical link creation with parent context edits.
+  clinicalContextVersion Int @default(0) @map("clinical_context_version")
   id                     String            @id @db.Uuid
   patientId              String            @map("patient_id") @db.Uuid
   doctorId               String            @map("doctor_id") @db.Uuid
