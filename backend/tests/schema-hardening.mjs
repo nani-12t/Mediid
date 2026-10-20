@@ -35,7 +35,7 @@ async function booking(s,domain='hospital',extra={},seat=1,reservationState='CON
 async function payment(b,extra={}) {return insert('appointment_payments',{id:id(),hospital_appointment_id:b.id,actor_user_id:actor,amount:'100.00',currency:'INR',provider:'synthetic',provider_transaction_ref:id(),idempotency_key:id(),status:'CAPTURED',captured_at:new Date(),...extra});}
 async function refund(p,extra={}) {return insert('appointment_refunds',{id:id(),payment_id:p.id,hospital_appointment_id:p.hospital_appointment_id,private_clinic_appointment_id:p.private_clinic_appointment_id,actor_user_id:actor,amount:'25.00',currency:'INR',provider:'synthetic',idempotency_key:id(),...extra});}
 try {
- for(const file of ['../prisma/migrations/202610190001_phase131_baseline/migration.sql','../prisma/migrations/202610190002_phase131_constraints/migration.sql']) await db.exec(readFileSync(new URL(file,import.meta.url),'utf8'));
+ for(const file of ['../prisma/migrations/202610190001_phase131_baseline/migration.sql','../prisma/migrations/202610190002_phase131_constraints/migration.sql','../prisma/migrations/202610200001_phase131_review/migration.sql']) await db.exec(readFileSync(new URL(file,import.meta.url),'utf8'));
  assert.equal(readFileSync(new URL('../prisma/constraints.sql',import.meta.url),'utf8'),readFileSync(new URL('../prisma/migrations/202610190002_phase131_constraints/migration.sql',import.meta.url),'utf8'));
  actor=id();await insert('users',{id:actor,email:'synthetic@example.invalid',password_hash:'not-a-real-credential',role:'patient',updated_at:new Date()});
  const admin=id();await insert('users',{id:admin,email:'admin@example.invalid',password_hash:'synthetic',role:'hospital_admin',updated_at:new Date()});

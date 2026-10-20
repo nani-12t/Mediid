@@ -6,9 +6,10 @@ MongoDB remains primary. This phase adds schema and synthetic tests; PostgreSQL 
 
 1. migrations/202610190001_phase131_baseline/migration.sql creates the complete validated Prisma schema in an empty database, including vector and btree_gist.
 2. migrations/202610190002_phase131_constraints/migration.sql installs all handwritten checks, exclusions, triggers and partial indexes. It must match constraints.sql exactly; tests verify equality.
-3. Apply both in order to a disposable database. Existing PostgreSQL installations require a reviewed reconciliation and conflict audit, not replay of the empty baseline. Do not replace migrations with schema push, which omits essential SQL protections.
+3. migrations/202610200001_phase131_review/migration.sql is the forward corrective migration for clinical context and same-slot policy checks. The original two migration files and constraints.sql remain unchanged.
+4. Apply all three in order to a disposable database. Existing PostgreSQL installations require a reviewed reconciliation and conflict audit, not replay of the empty baseline. Do not replace migrations with schema push, which omits essential SQL protections.
 
-Tests execute these exact files in a fresh in-memory PGlite PostgreSQL instance with vector and btree_gist. They never read DATABASE_URL or connect to installed services or production. PGlite uses the PostgreSQL engine, but does not test independently executing database sessions. Native concurrent transaction/load testing remains a review follow-up.
+Tests execute these exact files in a fresh in-memory PGlite PostgreSQL instance with vector and btree_gist. They never read DATABASE_URL or connect to installed services or production. PGlite uses the PostgreSQL engine, but does not test independently executing database sessions. Independent-connection seat/refund/context tests also run in a fresh native PostgreSQL cluster when initdb/pg_ctl are available. The native runner reports NOT EXECUTED when unavailable; this is a Phase 2.1 gate. If pgvector is unavailable and remains unused by all columns, the native race runner omits only that extension declaration and reports the exception. Exact unmodified native migration execution with pgvector remains a Phase 2.1 gate.
 
 ## Enforced invariants
 
@@ -47,3 +48,15 @@ Public MEDIID IDs and the frozen deterministic UUIDv5 namespace are unchanged. H
 Hospital front desk stays scoped to its hospital. Private-clinic scheduling is doctor-owned, with no receptionist role. Support receives attributable scheduling/billing assistance, not unrestricted EHR access. Role provisioning and authorization enforcement remain future-phase work. Existing MongoDB API responses remain unchanged.
 
 References: [PostgreSQL ranges/exclusion](https://www.postgresql.org/docs/current/rangetypes.html), [Prisma v6 migration workflow](https://www.prisma.io/docs/orm/v6/prisma-migrate/getting-started), [PGlite extensions](https://pglite.dev/extensions/).
+
+## Forward review correction (2026-10-20)
+
+Execute the original baseline, original constraints, then 202610200001_phase131_review. Never edit either merged migration or replay constraints.sql as the final specification; the forward migration replaces the affected functions. The entire correction runs in one transaction. It fails on existing patient/doctor/context mismatches or known online policy violations instead of silently rewriting identity, money or deadlines. Existing missing organization fields are filled only from the authoritative referenced appointment; independent-clinic NULL stays NULL. Past channel/source changes cannot be reconstructed and require a separate historical audit.
+
+Encounter and ConsultationSession INSERT/UPDATE now match the referenced legacy/hospital/clinic appointment's patient, doctor and organization. ConsultationSession gains nullable hospitalId so its organization can be checked. Parent context edits are rejected while either clinical table references the appointment. A database-written clinicalContextVersion counter on the parent makes clinical-link creation contend with parent edits even at REPEATABLE READ. It is serialization metadata, not a new appointment or encounter count. Existing zero-or-one appointment reference checks are unchanged; zero-reference direct encounters and multiple encounters per appointment remain valid.
+
+Legacy appointment patient/doctor/hospital columns are already required by the merged schema. The correction explicitly rejects incomplete required parent context rather than guessing. Missing historical times remain unknown in the legacy record; no timestamps or organizations are fabricated. Private-clinic organization NULL is an explicit independent-clinic context, not an unknown hospital.
+
+Every operational ONLINE clinic update now enforces 50 percent deposit against the current fee. Same-slot edits retain the original booking time, snapshot, channel/source and reserved deadline. A consistent paired fee/deposit update remains valid. Genuine slot changes may take a new booking timestamp, snapshot and computed deadline atomically with replacement reservation creation. New reservations cannot use an expired hold from the same booking epoch, including a direct fresh CONFIRMED reservation. Offline fee/deposit edits remain permitted within existing numeric bounds.
+
+Reproduction command: npm run test:review:reproduce (only original migrations). Corrective command: npm run test:review (all three unchanged migration files in order). Native command: npm run test:review:native (new loopback-only cluster, independent connections, then shutdown; never reads DATABASE_URL). Set MEDIID_TEST_PG_BIN to the PostgreSQL binary directory if needed.

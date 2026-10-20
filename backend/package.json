@@ -9,7 +9,10 @@
     "prisma:validate": "prisma validate --schema prisma/schema.prisma",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "test:schema": "node tests/schema-hardening.mjs",
-    "test:legacy": "node --test tests/db-config.test.cjs tests/listen.test.cjs tests/mongo-regression.test.cjs"
+    "test:legacy": "node --test tests/db-config.test.cjs tests/listen.test.cjs tests/mongo-regression.test.cjs",
+    "test:review": "node tests/phase131-review.mjs",
+    "test:review:reproduce": "node tests/phase131-review.mjs --reproduce",
+    "test:review:native": "node tests/phase131-native.mjs"
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.5",
@@ -35,6 +38,7 @@
     "@types/node": "^25.4.0",
     "mongodb-memory-server": "10.2.3",
     "nodemon": "^3.0.2",
+    "pg": "8.16.3",
     "prisma": "6.19.3"
   }
 }

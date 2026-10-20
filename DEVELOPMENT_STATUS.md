@@ -1,33 +1,36 @@
 # MEDIID development status
 
 Active repository: Mediid-main only.
-Branch: feature/phase-1.3.1-schema-hardening
-Reviewed main/origin baseline: 43049d5c1281327a0884adb81181402d2ede5482.
+Reviewed merged main: c9a799240d8d1067fbe341eb8b0cafe7c214a25b (PR #1).
+Current branch: fix/phase-1.3.1-review.
 
-## Phase 1.3.1
+## Phase 1.3.1 review fixes
 
 IMPLEMENTED / TESTED / PENDING REVIEW
 
-Implemented separate appointment payment/refund ledgers with Decimal/currency/idempotency, retained financial audit history and atomic partial-refund budgets. Shared per-booking reservation rows replace the global slot holder. Executable PostgreSQL constraints enforce doctor interval exclusion, capacity, appointment-slot identity, encounter domain exclusivity, deadline bounds, support attribution and patient-approved transfers. Provider policies expose structured cancellation/reschedule/no-show defaults. Public MEDIID IDs and the frozen UUIDv5 migration namespace are unchanged. Unknown historical times remain in legacy appointments.
+- Reproduced 54 accepted invalid-write cases against only the two merged migrations: clinical patient/doctor/organization mismatches, parent/reference edits, same-slot deposit/fee/deadline/channel bypasses, and expired-hold replacement.
+- Added forward migration 202610200001_phase131_review. Both merged migrations and constraints.sql remain unchanged.
+- Clinical links now match the referenced appointment's patient, doctor and organization on INSERT/UPDATE. ConsultationSession gains nullable organization context, backfilled only from the actual parent. Parent edits cannot invalidate linked clinical data; a parent-row serialization counter also protects concurrent clinical linking. Direct encounters and multiple encounters per appointment remain valid.
+- Every operational online clinic update enforces the 50 percent deposit. Same-slot edits retain the original snapshot, booking time, channel/source and reserved deadline. Expired holds cannot be replaced or directly confirmed. Valid offline edits and genuine atomic rescheduling remain supported.
+- Existing inconsistent clinical links or known online policy violations abort the correction transaction for explicit reconciliation; identity, money and deadlines are never silently rewritten. Missing historical times remain unknown.
 
-Verification:
+Executed checks (synthetic data only):
 
-- Prisma 6.19.3 validate: PASS; generate: PASS. CLI/client are pinned together.
-- PostgreSQL: 27 checks PASS against the exact committed full-schema and constraint migrations in disposable PGlite PostgreSQL 17.5 with vector and btree_gist.
-- MongoDB 7.0.30/Express: 12 test-runner passes, comprising 5 existing startup checks, 6 HTTP regressions and their container test. Registration, login, public MEDIID UID and authorization behavior preserved.
-- Test credentials/data were synthetic. No production databases, installed database services, external notification services or production data were used.
-- server.js only gains an explicit DOTENV_CONFIG_PATH override for isolated tests. Live MongoDB routes and data ownership remain primary.
-- Results and artifact hashes are in backend/test-results/phase131-verification.json. SQL contract and execution order are in backend/prisma/SQL_CONSTRAINTS.md.
+- Prisma 6.19.3 validation and generation: PASS.
+- Existing schema suite: 27 PASS; corrective review suite: 70 PASS in disposable PGlite PostgreSQL, executing all three exact migration files.
+- Native disposable PostgreSQL 18.4: 4 independent-connection checks PASS. Competing hospital/clinic seat allocation, refund budgets at READ COMMITTED and REPEATABLE READ, and clinical-link/parent-edit races are covered. The temporary clusters were stopped; installed database services were not used.
+- MongoDB 7.0.30/backend regressions: 12 test-runner passes (5 startup checks, 6 HTTP checks and their container). Live MongoDB remains primary.
+- Fresh npm audit of this branch's current lockfile: 26 vulnerabilities (2 critical, 18 high, 5 moderate, 1 low). No forced upgrades or dependency remediation were included; these findings are not copied from any deleted implementation.
 
-Review limits and remaining issues:
+Limits and Phase 2.1 gates:
 
-- Native multi-session concurrency/load testing remains a follow-up; PGlite runs the real PostgreSQL engine but one session. The SQL uses unique seat indexes and an atomic parent refund counter to protect concurrent writes.
-- npm audit reports 26 dependency vulnerabilities (2 critical, 18 high, 5 moderate, 1 low). No forced dependency upgrade or Phase 2 security implementation was included.
-- Existing populated PostgreSQL targets need a separate reconciliation/backfill and conflict audit. Runtime access provisioning must reserve migration provenance to the migration writer and keep the application role from owning/altering schema objects.
-- This phase supplies schema, executable constraints and tests; payment/refund services, production authorization and cutover are not implemented or deployed.
+- Exact unmodified native migration execution: NOT EXECUTED because native pgvector is unavailable. The native race runner omitted only the unused CREATE EXTENSION vector statement; no schema table, index, check or trigger was omitted. PGlite executed all migrations unmodified with vector and btree_gist. Install pgvector and run exact native migration deployment before Phase 2.1.
+- Runtime access provisioning, historical channel/source auditing and current dependency findings remain review gates. No production data or databases were accessed and no production migration/cutover occurred.
+
+Evidence: backend/test-results/phase131-review-verification.json and the review reproduction/PostgreSQL/native/dependency reports. SQL contract: backend/prisma/SQL_CONSTRAINTS.md.
 
 ## Phase 2.1
 
 NOT STARTED
 
-Final phase status: READY FOR EXTERNAL REVIEW. Do not merge or start Phase 2.1 without instruction.
+READY FOR EXTERNAL REVIEW. Do not merge automatically or start Phase 2.1.

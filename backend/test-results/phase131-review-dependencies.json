@@ -1,0 +1,13 @@
+{
+  "source": "fresh npm audit for current repository lockfile",
+  "vulnerabilities": {
+    "info": 0,
+    "low": 1,
+    "moderate": 5,
+    "high": 18,
+    "critical": 2,
+    "total": 26
+  },
+  "lockfileSHA256": "6c9e0b33d64a0f42ef548f2ca9a32fe5e4bab994c24a861ff2ab98e4c227ae4a",
+  "productionDataAccess": false
+}
