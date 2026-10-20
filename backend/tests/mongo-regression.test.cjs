@@ -12,7 +12,7 @@ test('legacy Express/MongoDB registration, login and protected routes remain com
  const emptyCwd=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'mediid-mongo-test-'));
  const serverPath=path.resolve('server.js');
  const mongo=await MongoMemoryServer.create({binary:{version:'7.0.30',downloadDir:path.resolve('.test-data/mongodb-binaries')},instance:{ip:'127.0.0.1'}});
- let child;
+ let child,fixtureConnection;
  try{
   const lease=net.createServer();await new Promise(resolve=>lease.listen(0,'127.0.0.1',resolve));const port=lease.address().port;await new Promise(resolve=>lease.close(resolve));
   const env={};for(const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','USERPROFILE'])if(process.env[key])env[key]=process.env[key];
@@ -36,9 +36,47 @@ test('legacy Express/MongoDB registration, login and protected routes remain com
   await t.test('login and authenticated profile',async()=>{login=await api('auth/login',{email:account.email,password:account.password});assert.equal(login.status,200);assert.equal((await api('auth/me',null,login.data.token)).status,200);});
   await t.test('invalid password rejected',async()=>assert.equal((await api('auth/login',{email:account.email,password:'wrong'})).status,401));
   await t.test('unauthenticated protected profile rejected',async()=>assert.equal((await api('auth/me')).status,401));
-  fs.mkdirSync('test-results',{recursive:true});fs.writeFileSync('test-results/phase131-mongo.json',JSON.stringify({synthetic:true,mongodb:'7.0.30',expressChecks:6,productionAccess:false},null,2)+'\n');
+  await t.test('patient profile lookup, public UID scan and QR remain compatible',async()=>{
+   const profile=await api('patients/profile',null,login.data.token);assert.equal(profile.status,200);assert.equal(profile.data.uid,registered.data.profile.uid);
+   const qr=await api('patients/qr',null,login.data.token);assert.equal(qr.status,200);assert.equal(qr.data.uid,profile.data.uid);assert.match(qr.data.qrCode,/^data:image/);
+   assert.equal((await api('patients/scan/'+profile.data.uid)).data.uid,profile.data.uid);
+  });
+  let hospital;
+  await t.test('hospital registration preserves HID and response contracts',async()=>{
+   hospital=await api('auth/register',{email:'hospital@example.invalid',password:account.password,role:'hospital_admin',hospitalName:'Synthetic Hospital',registrationNumber:'SYNTHETIC001'});
+   assert.equal(hospital.status,201,JSON.stringify(hospital.data));assert.equal(hospital.data.profile.uid,'HID-SYNTHETIC001');
+  });
+  await t.test('hospital login, me and owned profile lookup remain compatible',async()=>{
+   const signedIn=await api('auth/login',{email:'hospital@example.invalid',password:account.password});assert.equal(signedIn.status,200);
+   const me=await api('auth/me',null,signedIn.data.token),profile=await api('hospitals/admin/profile',null,signedIn.data.token);assert.equal(me.status,200);assert.equal(profile.status,200);assert.equal(me.data.profile.uid,hospital.data.profile.uid);assert.equal(profile.data.uid,hospital.data.profile.uid);
+  });
+  await t.test('existing role middleware rejects patient/hospital cross-role routes',async()=>{
+   assert.equal((await api('hospitals/admin/profile',null,login.data.token)).status,403);assert.equal((await api('patients/profile',null,hospital.data.token)).status,403);
+  });
+  fixtureConnection=await require('mongoose').createConnection(mongo.getUri('mediid_synthetic')).asPromise();
+  const doctorUid='HID-SYNTHETIC001-SRDOC-0001';
+  await fixtureConnection.collection('doctors').insertOne({hospital:new (require('mongoose').Types.ObjectId)(hospital.data.profile._id),uid:doctorUid,email:'doctor@example.invalid',firstName:'Synthetic',lastName:'Doctor',specialization:'General Medicine',isActive:true,status:'available'});
+  let activated;
+  await t.test('existing doctor activation accepts canonicalized UID and links its Mongo profile',async()=>{
+   activated=await api('auth/doctor-activate',{uid:' '+doctorUid.toLowerCase()+' ',password:account.password});assert.equal(activated.status,201,JSON.stringify(activated.data));assert.equal(activated.data.user.uid,doctorUid);assert.equal(activated.data.profile.uid,doctorUid);
+   assert.equal((await api('auth/doctor-activate',{uid:doctorUid,password:account.password})).status,400);
+  });
+  await t.test('doctor email/UID login and populated me profile remain compatible',async()=>{
+   for(const identity of ['doctor@example.invalid',doctorUid]){const result=await api('auth/login',{email:identity,password:account.password});assert.equal(result.status,200);assert.equal(result.data.profile.uid,doctorUid);assert.equal(result.data.profile.hospital.name,'Synthetic Hospital');const me=await api('auth/me',null,result.data.token);assert.equal(me.status,200);assert.equal(me.data.profile.uid,doctorUid);}
+  });
+  await t.test('legacy auth middleware rejects malformed and tampered bearer tokens',async()=>{
+   assert.equal((await api('auth/me',null,'malformed')).status,401);assert.equal((await api('auth/me',null,login.data.token.slice(0,-20)+'invalidsignature')).status,401);
+  });
+  await t.test('existing synthetic Mongo password-reset flow remains functional',async()=>{
+   const known=await api('auth/forgot-password',{email:account.email}),unknown=await api('auth/forgot-password',{email:'unknown@example.invalid'});assert.equal(known.status,200);assert.deepEqual(known.data,unknown.data);
+   const record=await fixtureConnection.collection('users').findOne({email:account.email});assert.ok(record.resetPasswordToken);assert.ok(record.resetPasswordExpire>new Date());
+   const newPassword='NewSyntheticPassword123!';assert.equal((await api('auth/reset-password',{email:account.email,otp:record.resetPasswordToken,newPassword})).status,200);
+   assert.equal((await api('auth/login',{email:account.email,password:newPassword})).status,200);assert.equal((await api('auth/login',{email:account.email,password:account.password})).status,401);
+  });
+  fs.mkdirSync('test-results',{recursive:true});fs.writeFileSync('test-results/phase131-mongo.json',JSON.stringify({synthetic:true,mongodb:'7.0.30',expressChecks:14,productionAccess:false},null,2)+'\n');
  }finally{
   if(child&&child.exitCode===null){const closed=new Promise(resolve=>child.once('close',resolve));child.kill();await closed;}
+  await fixtureConnection?.close();
   await mongo.stop();
  }
 });

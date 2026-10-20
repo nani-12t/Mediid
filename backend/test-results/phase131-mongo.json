@@ -1,6 +1,6 @@
 {
   "synthetic": true,
   "mongodb": "7.0.30",
-  "expressChecks": 6,
+  "expressChecks": 14,
   "productionAccess": false
 }

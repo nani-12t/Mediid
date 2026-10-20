@@ -33,7 +33,7 @@ model User {
   passwordHash           String    @map("password_hash") @db.VarChar(255)
   role                   UserRole
   isActive               Boolean   @default(true) @map("is_active")
-  resetPasswordToken     String?   @map("reset_password_token") @db.VarChar(32)
+  resetPasswordToken     String?   @map("reset_password_token") @db.VarChar(64) // SHA-256 digest only; never a raw reset credential
   resetPasswordExpiresAt DateTime? @map("reset_password_expires_at") @db.Timestamptz(6)
   lastLoginAt            DateTime? @map("last_login_at") @db.Timestamptz(6)
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

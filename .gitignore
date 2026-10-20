@@ -14,3 +14,6 @@ backend/.test-data/
 
 # Local PostgreSQL credentials; examples remain tracked
 backend/.env.postgres.local
+
+# Optional local authentication secrets; example only is tracked
+backend/.env.auth.local

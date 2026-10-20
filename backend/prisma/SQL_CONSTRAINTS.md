@@ -1,6 +1,6 @@
 # Phase 1.3.1 executable database protections
 
-MongoDB remains primary. This phase adds schema and synthetic tests; PostgreSQL runtime integration and Phase 2.1 are not started.
+MongoDB remains operationally primary. Phase 1.3.1 and merged Phase 2.1 are complete; Phase 2.2A adds isolated authentication services and test-only integration without operational cutover.
 
 ## Executable migration order
 
@@ -8,7 +8,8 @@ MongoDB remains primary. This phase adds schema and synthetic tests; PostgreSQL 
 2. migrations/202610190002_phase131_constraints/migration.sql installs all handwritten checks, exclusions, triggers and partial indexes. It must match constraints.sql exactly; tests verify equality.
 3. migrations/202610200001_phase131_review/migration.sql is the forward corrective migration for clinical context and same-slot policy checks. The original two migration files and constraints.sql remain unchanged.
 4. migrations/202610200002_phase21_infrastructure_permissions/migration.sql grants isolated infrastructure metadata access after administrator role setup; deploy through Prisma so its history table exists.
-5. Phase 2.1 development setup deploys all four in order; the Phase 1.3.1 regression gate executes the first three exact files. Existing PostgreSQL installations require a reviewed reconciliation and conflict audit, not replay of the empty baseline. Do not replace migrations with schema push, which omits essential SQL protections.
+5. migrations/202610200003_phase22a_auth_identity/migration.sql adds canonical identities, hashed reset storage and narrowly scoped auth/ownership/membership permissions. See AUTH_FOUNDATION.md.
+6. Development setup deploys all five in order; the Phase 1.3.1 regression gate executes the first three exact files. Existing PostgreSQL installations require a reviewed reconciliation and conflict audit, not replay of the empty baseline. Do not replace migrations with schema push, which omits essential SQL protections.
 
 Tests execute these exact files in a fresh in-memory PGlite PostgreSQL instance with vector and btree_gist. They never read DATABASE_URL or connect to installed services or production. PGlite uses the PostgreSQL engine, but does not test independently executing database sessions. Independent-connection seat/refund/context tests also run in a fresh native PostgreSQL cluster when initdb/pg_ctl are available. The native runner reports NOT EXECUTED when unavailable; this is a Phase 2.1 gate. Native verification now requires real pgvector and never removes extension declarations. The former exact-native gate was closed on PostgreSQL 18.4 with vector 0.8.2 and btree_gist 1.8; all three merged files executed unchanged.
 

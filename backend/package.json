@@ -21,7 +21,9 @@
     "db:check": "npm run build:infra && node dist/infrastructure/postgres/cli.js check",
     "db:diagnostics": "npm run build:infra && node dist/infrastructure/postgres/cli.js readonly",
     "db:migrate:deploy": "npm run build:infra && node scripts/prisma.cjs deploy",
-    "db:migrate:status": "npm run build:infra && node scripts/prisma.cjs status"
+    "db:migrate:status": "npm run build:infra && node scripts/prisma.cjs status",
+    "test:auth:unit": "npm run build:infra && node --test tests/auth-unit.test.cjs",
+    "test:auth": "npm run build:infra && node tests/phase22a-auth.mjs"
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.5",
@@ -45,6 +47,8 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.14",
+    "@types/bcryptjs": "2.4.6",
+    "@types/jsonwebtoken": "9.0.10",
     "@types/node": "^25.4.0",
     "@types/uuid": "9.0.8",
     "mongodb-memory-server": "10.2.3",

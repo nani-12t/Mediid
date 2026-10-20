@@ -1,6 +1,6 @@
 # PostgreSQL infrastructure development
 
-MongoDB remains the operational database. Existing Express routes, authentication, appointments and frontend API contracts are unchanged. PostgreSQL is an isolated capability with no mounted business repositories, request-level client creation, fallback writes or automatic dual writes. Python/FastAPI remains reserved for later AI services.
+MongoDB remains the operational database. Existing Express routes, authentication, appointments and frontend API contracts are unchanged. PostgreSQL is an isolated capability with no mounted PostgreSQL business repositories, request-level client creation, fallback writes or automatic dual writes. Python/FastAPI remains reserved for later AI services.
 
 ## Fresh backend setup
 
@@ -32,8 +32,9 @@ The migration wrapper accepts only the named migration role, captures raw Prisma
 2. 202610190002_phase131_constraints
 3. 202610200001_phase131_review
 4. 202610200002_phase21_infrastructure_permissions
+5. 202610200003_phase22a_auth_identity
 
-The first three merged files are unchanged. The fourth grants infrastructure metadata access only. Runtime/diagnostics have no schema creation, migration-history mutation, clinical-table reads or business writes. There are no application-role memberships that permit becoming the migration role. Privileges for future business repositories must be reviewed and granted separately; runtime migration provenance stays protected.
+The first four merged files are unchanged. The fourth grants infrastructure metadata access only; the fifth adds narrowly scoped authentication/ownership/membership column permissions for Phase 2.2A. Runtime cannot create schema objects, mutate migration history or access unrelated clinical/business fields. Diagnostics retains metadata-only access. See AUTH_FOUNDATION.md for exact grants, identity reconciliation and authentication settings.
 
 ## Lifecycle, readiness and pooling
 
@@ -62,6 +63,6 @@ The exact gate executes all three original migration files unchanged, verifies b
 
 Public MEDIID UIDs are unchanged. Legacy ObjectId conversion uses the frozen UUIDv5 namespace 57c0c744-9cdc-41f9-a532-7e60be63d87f and rejects noncanonical input instead of silently remapping it. New PostgreSQL IDs use a separately pinned UUIDv7 library; the existing UUID dependency used by MongoDB routes is preserved.
 
-Fresh dependency findings and affected paths are in ../../security/audits/phase21. They are unresolved; no forced major upgrades were performed. No Phase 2.2 authentication or production data migration is included.
+Fresh dependency findings and affected paths are in ../../security/audits/phase21. They are unresolved; no forced major upgrades were performed. Phase 2.2A adds isolated auth services only; see AUTH_FOUNDATION.md. No operational auth cutover, Phase 2.2B or production data migration is included.
 
 References: [Prisma v6 PostgreSQL settings](https://docs.prisma.io/docs/orm/v6/overview/databases/postgresql), [PostgreSQL 18 extension paths](https://www.postgresql.org/docs/18/runtime-config-client.html), [official pgvector build instructions](https://github.com/pgvector/pgvector/tree/v0.8.2).
