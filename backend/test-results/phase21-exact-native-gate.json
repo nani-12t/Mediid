@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "engine": "PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit",
+  "extensions": [
+    {
+      "extname": "btree_gist",
+      "extversion": "1.8"
+    },
+    {
+      "extname": "vector",
+      "extversion": "0.8.2"
+    }
+  ],
+  "migrationHashes": {
+    "202610190001_phase131_baseline": "9b5f8dafa4a292f8a491eb73863012e7b509369471944e7cc9ae151e5af2bb62",
+    "202610190002_phase131_constraints": "f886f6013e486904f99c78c0ce3d1efc1a0c5dca43861458b51038d1b0515a03",
+    "202610200001_phase131_review": "80600525e2f6ff5e033a65be8e6920a96f75d236b085b27f3d4b15547c0dfcf9"
+  },
+  "exactUnmodifiedMigrations": true,
+  "schemaChecks": 27,
+  "reviewChecks": 70,
+  "synthetic": true
+}

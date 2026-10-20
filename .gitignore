@@ -11,3 +11,6 @@ build/
 .vscode/
 # Disposable synthetic database binaries/data only
 backend/.test-data/
+
+# Local PostgreSQL credentials; examples remain tracked
+backend/.env.postgres.local

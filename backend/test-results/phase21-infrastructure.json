@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "engine": "PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit",
+  "passed": 24,
+  "checks": [
+    "runtime refuses an unmigrated database before exposing a client",
+    "migration deployment uses a separate non-superuser credential",
+    "Prisma migration status reports current history",
+    "deployment is repeatable without rewriting merged migration history",
+    "runtime can read infrastructure readiness but no clinical records",
+    "runtime cannot create or alter schemas/tables",
+    "runtime cannot forge, delete, truncate or update migration history",
+    "runtime has no booking or financial writes and cannot become migrator",
+    "diagnostics is read-only and excludes sensitive business tables",
+    "concurrent initialization reuses one Prisma lifecycle owner",
+    "Prisma pool stays within its configured bound under concurrent queries",
+    "shutdown is idempotent and closes Prisma sessions",
+    "shutdown during initialization never exposes a ready client",
+    "missing and incomplete migrations prevent readiness",
+    "tampered migration checksums prevent readiness",
+    "checksum readiness tolerates only Git LF/CRLF checkout differences",
+    "unexpected runtime migration-history grants prevent startup",
+    "unsafe runtime schema grants are rejected at initialization",
+    "membership in the migration role is rejected even without inheritance",
+    "unavailable PostgreSQL fails with bounded retries and safe errors",
+    "bad runtime credentials are not retried or exposed",
+    "readonly diagnostics uses its separate lifecycle successfully",
+    "migration command rejects runtime credentials without exposing them",
+    "real diagnostics process starts and shuts down cleanly without secrets in output"
+  ],
+  "roles": [
+    "mediid_migrator",
+    "mediid_runtime",
+    "mediid_diagnostics"
+  ],
+  "migrations": 4,
+  "synthetic": true,
+  "productionAccess": false
+}
