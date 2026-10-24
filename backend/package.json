@@ -13,17 +13,16 @@
     "test:review": "node tests/phase131-review.mjs",
     "test:review:reproduce": "node tests/phase131-review.mjs --reproduce",
     "test:review:native": "node tests/phase131-native.mjs",
-    "build:infra": "tsc -p tsconfig.infrastructure.json",
-    "typecheck": "tsc -p tsconfig.infrastructure.json --noEmit",
     "test:infra:unit": "node --test tests/infrastructure-unit.test.cjs",
-    "test:infra": "npm run build:infra && node tests/phase21-infrastructure.mjs",
+    "test:infra": "node tests/phase21-infrastructure.mjs",
     "test:native:exact": "node tests/phase21-native-gate.mjs",
-    "db:check": "npm run build:infra && node dist/infrastructure/postgres/cli.js check",
-    "db:diagnostics": "npm run build:infra && node dist/infrastructure/postgres/cli.js readonly",
-    "db:migrate:deploy": "npm run build:infra && node scripts/prisma.cjs deploy",
-    "db:migrate:status": "npm run build:infra && node scripts/prisma.cjs status",
-    "test:auth:unit": "npm run build:infra && node --test tests/auth-unit.test.cjs",
-    "test:auth": "npm run build:infra && node tests/phase22a-auth.mjs"
+    "db:check": "node src/infrastructure/postgres/cli.js check",
+    "db:diagnostics": "node src/infrastructure/postgres/cli.js readonly",
+    "db:migrate:deploy": "node scripts/prisma.cjs deploy",
+    "db:migrate:status": "node scripts/prisma.cjs status",
+    "test:auth:unit": "node --test tests/auth-unit.test.cjs",
+    "test:auth": "node tests/phase22a-auth.mjs",
+    "check:js": "node scripts/check-js.cjs"
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.5",
@@ -47,14 +46,9 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.14",
-    "@types/bcryptjs": "2.4.6",
-    "@types/jsonwebtoken": "9.0.10",
-    "@types/node": "^25.4.0",
-    "@types/uuid": "9.0.8",
     "mongodb-memory-server": "10.2.3",
     "nodemon": "^3.0.2",
     "pg": "8.16.3",
-    "prisma": "6.19.3",
-    "typescript": "5.9.3"
+    "prisma": "6.19.3"
   }
 }

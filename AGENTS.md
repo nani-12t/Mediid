@@ -1,5 +1,8 @@
 # MEDIID development rules
 
+- MEDIID Node/Express backend language: JavaScript/CommonJS.
+- Do not introduce TypeScript into the Node backend.
+- Python/FastAPI is reserved for the separate AI service.
 - Use this single active Mediid-main repository. Do not create duplicate project folders, baselines, replacement projects or worktrees.
 - Review clean main and origin/main before each phase. The user-authorized solo workflow works on main, verifies all required checks, then creates one complete phase commit and pushes without force. Do not publish intermediate work.
 - MongoDB remains the live primary database until explicitly authorized otherwise.

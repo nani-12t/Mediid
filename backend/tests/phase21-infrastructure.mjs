@@ -6,8 +6,8 @@ import {createRequire} from 'node:module';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 const require=createRequire(import.meta.url);
-const {PostgresInfrastructure}=require('../dist/infrastructure/postgres/client');
-const {runtimeConfig,diagnosticsConfig}=require('../dist/infrastructure/postgres/config');
+const {PostgresInfrastructure}=require('../src/infrastructure/postgres/client');
+const {runtimeConfig,diagnosticsConfig}=require('../src/infrastructure/postgres/config');
 const cluster=await startNativeCluster(),results=[],services=[];
 const passwords=Object.fromEntries(['mediid_migrator','mediid_runtime','mediid_diagnostics'].map(role=>[role,randomBytes(24).toString('hex')]));
 const migrationCount=readdirSync('prisma/migrations',{withFileTypes:true}).filter(x=>x.isDirectory()).length;
@@ -56,7 +56,7 @@ try{
  await check('readonly diagnostics uses its separate lifecycle successfully',async()=>{const service=keep(new PostgresInfrastructure(diagnosticsConfig({NODE_ENV:'test',PG_READONLY_URL:roleUrl(database,'mediid_diagnostics')})));await service.start();assert.equal(service.status().ready,true);await service.stop();});
  await check('migration command rejects runtime credentials without exposing them',async()=>{const r=command(database,'deploy',{PG_MIGRATION_URL:roleUrl(database,'mediid_runtime')});assert.equal(r.status,1);assert.match(r.stderr,/PG_CONFIG/);assert.doesNotMatch(r.stderr,/postgresql:\/\//);assert.ok(!r.stderr.includes(passwords.mediid_runtime));});
  await check('real diagnostics process starts and shuts down cleanly without secrets in output',async()=>{
-  const child=fork(path.resolve('dist/infrastructure/postgres/cli.js'),['watch'],{env:{...process.env,NODE_ENV:'test',PG_ENV_FILE:path.join(cluster.root,'absent.env'),PG_RUNTIME_URL:roleUrl(database,'mediid_runtime')},stdio:['ignore','pipe','pipe','ipc']});let output='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);
+  const child=fork(path.resolve('src/infrastructure/postgres/cli.js'),['watch'],{env:{...process.env,NODE_ENV:'test',PG_ENV_FILE:path.join(cluster.root,'absent.env'),PG_RUNTIME_URL:roleUrl(database,'mediid_runtime')},stdio:['ignore','pipe','pipe','ipc']});let output='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);
   const closed=new Promise(resolve=>child.once('exit',resolve));
   try{const deadline=Date.now()+15000;while(!output.includes('"status":"ready"')){if(child.exitCode!==null||Date.now()>deadline)throw new Error('Diagnostics startup failed: '+output);await new Promise(r=>setTimeout(r,50));}child.send({action:'shutdown'});const timeout=setTimeout(()=>child.kill(),10000);const code=await closed;clearTimeout(timeout);assert.equal(code,0,output);assert.match(output,/"status":"stopped"/);assert.doesNotMatch(output,/postgresql:\/\//);assert.ok(!output.includes(passwords.mediid_runtime));}finally{if(child.exitCode===null)child.kill();}
  });

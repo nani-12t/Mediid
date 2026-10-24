@@ -1,7 +1,7 @@
 const {spawnSync}=require('node:child_process');
 const path=require('node:path');
-const {migrationUrl}=require('../dist/infrastructure/postgres/config');
-const {safeFailure}=require('../dist/infrastructure/postgres/errors');
+const {migrationUrl}=require('../src/infrastructure/postgres/config');
+const {safeFailure}=require('../src/infrastructure/postgres/errors');
 require('dotenv').config({path:process.env.PG_ENV_FILE||path.resolve(__dirname,'../.env.postgres.local')});
 const mode=process.argv[2];
 try{

@@ -3,16 +3,16 @@ const assert = require('node:assert/strict');
 const {generateKeyPairSync} = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const {authConfig} = require('../dist/auth/config');
-const {PasswordHasher} = require('../dist/auth/crypto/password');
-const {resetCredential,resetDigest} = require('../dist/auth/crypto/reset');
-const {safeUser} = require('../dist/auth/dto/user');
-const {authResponse,AuthError} = require('../dist/auth/errors');
-const {canonicalEmail,canonicalUid} = require('../dist/auth/identity');
-const {AccessTokens} = require('../dist/auth/tokens');
-const {Authentication} = require('../dist/auth/services/authentication');
-const {createAuthTestServer} = require('../dist/auth/testing/harness');
-const {mongoObjectIdToUuid,newPostgresId} = require('../dist/identifiers/uuid');
+const {authConfig} = require('../src/auth/config');
+const {PasswordHasher} = require('../src/auth/crypto/password');
+const {resetCredential,resetDigest} = require('../src/auth/crypto/reset');
+const {safeUser} = require('../src/auth/dto/user');
+const {authResponse,AuthError} = require('../src/auth/errors');
+const {canonicalEmail,canonicalUid,roles} = require('../src/auth/identity');
+const {AccessTokens} = require('../src/auth/tokens');
+const {Authentication} = require('../src/auth/services/authentication');
+const {createAuthTestServer} = require('../src/auth/testing/harness');
+const {mongoObjectIdToUuid,newPostgresId} = require('../src/identifiers/uuid');
 const keys = generateKeyPairSync('rsa',{modulusLength:2048});
 const env = {AUTH_JWT_ISSUER:'mediid-test',AUTH_JWT_AUDIENCE:'mediid-test-api',AUTH_JWT_KEY_ID:'synthetic-key',AUTH_JWT_TTL_SECONDS:'900',AUTH_BCRYPT_COST:'12',AUTH_RESET_TTL_SECONDS:'900',AUTH_JWT_PRIVATE_KEY:keys.privateKey.export({type:'pkcs8',format:'pem'}),AUTH_JWT_PUBLIC_KEY:keys.publicKey.export({type:'spki',format:'pem'})};
 const config=authConfig(env), tokens=new AccessTokens(config), principal={id:newPostgresId(),role:'patient'};
@@ -23,7 +23,7 @@ function signed(payload={},options={}) {
  return jwt.sign({role:'patient',sub:principal.id,...payload},keys.privateKey,{algorithm:'RS256',keyid:config.keyId,issuer:config.issuer,audience:config.audience,expiresIn:900,notBefore:0,...options});
 }
 test('RSA configuration accepts separate matching multiline PEMs and literal escaped newlines',()=>{
- assert.equal(config.bcryptCost,12);
+ assert.equal(config.bcryptCost,12);assert.throws(()=>authConfig({...env,AUTH_JWT_TTL_SECONDS:900}),error=>error.code==='AUTH_CONFIG');
  const slash=String.fromCharCode(92),newline=String.fromCharCode(10);
  const escaped={...env,AUTH_JWT_PRIVATE_KEY:env.AUTH_JWT_PRIVATE_KEY.split(newline).join(slash+'n'),AUTH_JWT_PUBLIC_KEY:env.AUTH_JWT_PUBLIC_KEY.split(newline).join(slash+'n')};
  assert.equal(authConfig(escaped).keyId,config.keyId);
@@ -92,7 +92,7 @@ test('unknown/wrong/inactive/malformed login uses one comparison and the same AP
 test('identity canonicalization preserves public-ID characters without provider rewrites',()=>{
  assert.equal(canonicalEmail('  Alice+Care@Example.Invalid  '),'alice+care@example.invalid');
  assert.throws(()=>canonicalEmail(String.fromCodePoint(0x212a)+'@example.invalid'));
- assert.equal(canonicalUid(' hid-1234-srdoc-0001 '),'HID-1234-SRDOC-0001');
+ assert.equal(canonicalUid(' hid-1234-srdoc-0001 '),'HID-1234-SRDOC-0001');assert.equal(Object.isFrozen(roles),true);assert.throws(()=>roles.push('unsupported'));
  for(const uid of ['HID/1234','HID--1234','507f1f77bcf86cd799439011'])assert.throws(()=>canonicalUid(uid));
 });
 test('internal v5/v7 identity never substitutes for public UID',()=>{

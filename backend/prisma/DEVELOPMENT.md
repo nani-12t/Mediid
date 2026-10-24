@@ -4,7 +4,7 @@ MongoDB remains the operational database. Existing Express routes, authenticatio
 
 ## Fresh backend setup
 
-Use a reviewed Node release compatible with Prisma 6.19.3; this branch was tested on Node 24.19.0. Run npm ci in backend, then npm run prisma:validate, npm run prisma:generate and npm run build:infra. Schema validation/generation use an explicit nonconnecting validation URL and do not need real credentials. TypeScript compilation covers only the new src infrastructure/identifier modules and does not replace the CommonJS Express server.
+Use a reviewed Node release compatible with Prisma 6.19.3; this branch was tested on Node 24.19.0. Run npm ci in backend, then npm run prisma:validate, npm run prisma:generate and npm run check:js. Schema validation/generation use an explicit nonconnecting validation URL and do not need real credentials. All backend application source is JavaScript/CommonJS. Infrastructure, auth services and tests load src directly; no TypeScript compiler, tsconfig or dist build is required. Python/FastAPI is reserved for the separate future AI service.
 
 For an empty development PostgreSQL database, an administrator must install compatible pgvector and btree_gist first. Connect to that intended development database with psql and run prisma/roles.sql. It creates separate mediid_migrator, mediid_runtime and mediid_diagnostics roles, initially NOLOGIN with no passwords. Enable LOGIN and set distinct passwords using psql's interactive password command or your secret manager. Do not put passwords in SQL files, shell history, commits or logs. Existing populated databases require separate review/reconciliation; this setup is not a production cutover script.
 
@@ -38,11 +38,11 @@ The first four merged files are unchanged. The fourth grants infrastructure meta
 
 ## Lifecycle, readiness and pooling
 
-Use postgresInfrastructure() from the compiled client module for one owner per process. Importing it does not connect and it is not imported by server.js. Explicit start() deduplicates concurrent initialization, validates role safety and checks migration history/checksums before client access is permitted. Missing, incomplete, unexpected or changed migrations block readiness. Only Git LF/CRLF checkout differences are tolerated; SQL-content drift is rejected. stop() is idempotent and prevents future use. Shutdown during initialization waits for cleanup.
+Use postgresInfrastructure() from src/infrastructure/postgres/client.js for one owner per process. Importing it does not connect and it is not imported by server.js. Explicit start() deduplicates concurrent initialization, validates role safety and checks migration history/checksums before client access is permitted. Missing, incomplete, unexpected or changed migrations block readiness. Only Git LF/CRLF checkout differences are tolerated; SQL-content drift is rejected. stop() is idempotent and prevents future use. Shutdown during initialization waits for cleanup.
 
 PG_POOL_SIZE defaults to 4 in development, 2 in tests and 10 in production (range 1-50 per process). Size the total across worker processes against the server limit. PG_CONNECT_TIMEOUT_SECONDS defaults to 3, pool wait to 5 and query timeout to 10. Initial connection attempts default to 3 with 250ms delay; only temporary availability failures are retried. Authentication/configuration/migration/permission failures fail immediately. No business writes are retried. Strict production URLs require sslmode=require and sslaccept=strict, plus your trusted CA settings when needed. Prisma certificate paths are relative to its schema directory.
 
-CLI check/readonly modes initialize, print safe readiness metadata, disconnect and exit. The compiled CLI watch mode keeps the owner alive until SIGINT/SIGTERM; automated Windows tests use the same shutdown handler through a controlled IPC message. Status/errors contain no credentials, connection URLs or sensitive records. PostgreSQL failure is explicit and does not redirect writes to MongoDB.
+CLI check/readonly modes initialize, print safe readiness metadata, disconnect and exit. The JavaScript CLI watch mode keeps the owner alive until SIGINT/SIGTERM; automated Windows tests use the same shutdown handler through a controlled IPC message. Status/errors contain no credentials, connection URLs or sensitive records. PostgreSQL failure is explicit and does not redirect writes to MongoDB.
 
 ## Native disposable verification
 
@@ -54,10 +54,10 @@ On Windows with PostgreSQL 18 server headers and Visual Studio C++ Build Tools, 
     npm run test:review:native
     npm run test:infra
     npm run test:infra:unit
-    npm run typecheck
+    npm run check:js
     npm run test:legacy
 
-The exact gate executes all three original migration files unchanged, verifies both extensions and a real vector operator, then runs 27 schema and 70 review checks on native PostgreSQL. The concurrency suite now requires real pgvector and never removes SQL. The infrastructure suite uses Prisma to deploy all four migrations with non-superuser migration credentials and tests real role permissions, pooling, missing/drifted migrations, connection/auth failures and client/process shutdown. Pure identifier/configuration tests are separate. Production TLS chains, managed poolers, production load and production deployment remain outside this local verification.
+The exact gate executes all three original migration files unchanged, verifies both extensions and a real vector operator, then runs 27 schema and 70 review checks on native PostgreSQL. The concurrency suite now requires real pgvector and never removes SQL. The infrastructure suite uses Prisma to deploy all five migrations with non-superuser migration credentials and tests real role permissions, pooling, missing/drifted migrations, connection/auth failures and client/process shutdown. Pure identifier/configuration tests are separate. Production TLS chains, managed poolers, production load and production deployment remain outside this local verification.
 
 ## Ownership and remaining security work
 
