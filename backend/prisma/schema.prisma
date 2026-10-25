@@ -24,6 +24,7 @@ enum UserRole {
   buyer
   pharmacy
   support_agent
+  hospital_staff
 }
 
 model User {

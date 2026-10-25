@@ -258,7 +258,8 @@ let mappedAdminToken;
     ]);
     await source.collection('patients').insertOne(patientProfile);
     await source.collection('hospitals').insertOne({ _id: hospitalMongoId, user: adminMongoId, uid: 'HID-HTTPMAPPED',
-      name: 'Synthetic Reconciled Hospital', qrCode: 'data:image/png;base64,SyntheticPreservedHospitalQR', isActive: true, createdAt });
+      name: 'Synthetic Reconciled Hospital', qrCode: 'data:image/png;base64,SyntheticPreservedHospitalQR',
+      doctorSequence: 1, staffSequence: 0, isActive: true, createdAt });
     await source.collection('doctors').insertOne({ _id: doctorProfileId, user: doctorMongoId, hospital: hospitalMongoId,
       uid: 'HID-HTTPMAPPED-DOC-0001', firstName: 'Synthetic', lastName: 'MappedDoctor', specialization: 'Synthetic medicine',
       qrCode: 'data:image/png;base64,SyntheticPreservedDoctorQR', isActive: true, createdAt });
