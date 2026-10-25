@@ -287,3 +287,12 @@ Payment holds are dynamically calculated to prevent holds extending past appoint
 The executable specification is backend/prisma/SQL_CONSTRAINTS.md and its committed migrations. Replace single-holder logic with AppointmentSlotReservation rows and shared cross-domain capacity. Active doctor intervals use GiST exclusion. AppointmentPayment and AppointmentRefund retain attempts, captures, partial refunds and audited history. Runtime PostgreSQL services/access guards are deferred; MongoDB routes remain primary.
 
 Provider policies explicitly include 60/10/20/5/10-minute deadline defaults, configurable hospital confirmation lead of 40 minutes, 50 percent clinic online deposit, structured cancellation/rescheduling/no-show rules, and patient-approved transfers. Policy snapshots freeze booking terms. Operational bookings need matching slots and own reservations; legacy exceptions are explicit.
+
+
+## Phase 2.3 provider implementation (2026-10-25)
+
+The JavaScript/CommonJS provider domain is implemented under backend/src/organizations. ORGANIZATION_BACKEND explicitly chooses legacy Mongo routes or PostgreSQL providers; the PostgreSQL option requires reviewed PostgreSQL sessions and reuses the existing lifecycle. Hospital doctor membership is authoritative; hospital staff remain scoped roster identities with no EHR access.
+
+ADR-018 adds a distinct optional clinicOwnerDoctorId on Hospital, separate from optional hospital-admin userId, with exactly one owner and one clinic per private doctor. Clinics remain Hospital(type=clinic) records and gain an explicit practitioner membership. This creates no hospital-admin role or private receptionist.
+
+Phase 2.3 manages RecurringAvailabilityTemplate ownership/CRUD only. Materialization, appointment-capacity queries, reservations, payment holds and booking stay in Phase 2.5. Provider DTOs preserve nested legacy shapes and public UIDs. See backend/prisma/ORGANIZATIONS.md for current endpoints, grants, setup and limits.

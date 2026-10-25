@@ -1,0 +1,49 @@
+'use strict';
+const express=require('express');
+const {AuthError}=require('../../auth/errors');
+const {OrganizationError,organizationResponse}=require('../errors');
+const safe=fn=>(req,res,next)=>Promise.resolve().then(()=>fn(req,res,next)).catch(next);
+function createOrganizationRouter(runtime,service) {
+  if(runtime?.mode!=='postgres'||!service)throw new OrganizationError('ORG_CONFIG');
+  const router=express.Router();
+  const authenticate=safe(async(req,res,next)=>{
+    const value=req.headers.authorization;
+    if(typeof value!=='string'||!/^Bearer [^ ]+$/.test(value))throw new AuthError('AUTH_TOKEN');
+    req.principal=await runtime.sessions.authenticate(value.slice(7));next();
+  });
+  router.use(['/hospitals','/doctors','/staff','/doctor-portal/availability-templates'],(req,res,next)=>{
+    res.set('Cache-Control','no-store');
+    if(!['GET','HEAD','OPTIONS'].includes(req.method)&&req.headers.origin&&runtime.http&&!runtime.http.origins.includes(req.headers.origin))return next(new AuthError('AUTH_FORBIDDEN'));
+    next();
+  });
+  router.get('/hospitals',safe(async(req,res)=>res.json(await service.searchHospitals(req.query))));
+  router.get('/hospitals/top',safe(async(req,res)=>res.json(await service.searchHospitals(req.query,{top:true}))));
+  router.get('/hospitals/admin/profile',authenticate,safe(async(req,res)=>res.json(await service.adminHospital(req.principal))));
+  router.put('/hospitals/admin/profile',authenticate,safe(async(req,res)=>res.json(await service.updateHospital(req.principal,req.body))));
+  router.post('/hospitals',authenticate,safe(async(req,res)=>res.status(201).json(await service.createClinic(req.principal,req.body))));
+  router.get('/hospitals/uid/:uid',safe(async(req,res)=>res.json(await service.hospital(req.params.uid,{uid:true}))));
+  router.get('/hospitals/:id',safe(async(req,res)=>res.json(await service.hospital(req.params.id))));
+  router.put('/hospitals/:id',authenticate,safe(async(req,res)=>res.json(await service.updateClinic(req.principal,req.params.id,req.body))));
+  const optionalAuthenticate=(req,res,next)=>req.headers.authorization?authenticate(req,res,next):next();
+  router.get('/doctors',optionalAuthenticate,safe(async(req,res)=>res.json(await service.searchDoctors(req.query,req.principal))));
+  router.post('/doctors',authenticate,safe(async(req,res)=>res.status(201).json(await service.recruitDoctor(req.principal,req.body))));
+  router.get('/doctors/uid/:uid',safe(async(req,res)=>res.json(await service.doctor(req.params.uid,{uid:true}))));
+  router.get('/doctors/:id/manage',authenticate,safe(async(req,res)=>res.json(await service.managedDoctor(req.principal,req.params.id))));
+  router.get('/doctors/:id',safe(async(req,res)=>res.json(await service.doctor(req.params.id))));
+  router.put('/doctors/:id',authenticate,safe(async(req,res)=>res.json(await service.updateDoctor(req.principal,req.params.id,req.body))));
+  router.delete('/doctors/:id',authenticate,safe(async(req,res)=>res.json(await service.removeDoctor(req.principal,req.params.id))));
+  router.get('/staff/uid/:uid',safe(async(req,res)=>res.json(await service.staffBadge(req.params.uid))));
+  router.get('/staff',authenticate,safe(async(req,res)=>res.json(await service.staffList(req.principal,req.query))));
+  router.post('/staff',authenticate,safe(async(req,res)=>res.status(201).json(await service.recruitStaff(req.principal,req.body))));
+  router.get('/staff/:id',authenticate,safe(async(req,res)=>res.json(await service.staff(req.principal,req.params.id))));
+  router.put('/staff/:id',authenticate,safe(async(req,res)=>res.json(await service.updateStaff(req.principal,req.params.id,req.body))));
+  router.delete('/staff/:id',authenticate,safe(async(req,res)=>res.json(await service.removeStaff(req.principal,req.params.id))));
+  const templates='/doctor-portal/availability-templates';
+  router.get(templates,authenticate,safe(async(req,res)=>res.json(await service.templates(req.principal,req.query))));
+  router.post(templates,authenticate,safe(async(req,res)=>res.status(201).json(await service.createTemplate(req.principal,req.body))));
+  router.put(templates+'/:id',authenticate,safe(async(req,res)=>res.json(await service.updateTemplate(req.principal,req.params.id,req.body))));
+  router.delete(templates+'/:id',authenticate,safe(async(req,res)=>res.json(await service.removeTemplate(req.principal,req.params.id))));
+  router.use((error,req,res,next)=>{const result=organizationResponse(error);res.status(result.status).json(result.body);});
+  return router;
+}
+module.exports={createOrganizationRouter};

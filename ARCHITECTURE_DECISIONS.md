@@ -418,3 +418,19 @@ This supersedes Phase 1.3 single-holder slot logic and start-time-only uniquenes
 Payment/refund ledgers retain immutable financial identity and state-change snapshots, idempotency, Decimal/currency identity and atomic refund allocation against captures. Cancellation releases only its own reservation, independently of refunds. Provider cancellation defaults to full refund; transfer requires patient approval.
 
 The authoritative SQL/deadline contract is backend/prisma/SQL_CONSTRAINTS.md. Direct encounters remain valid; mixed appointment references fail. This approves Phase 1.3.1 schema changes only. MongoDB remains primary; Phase 2.1 is not started.
+
+
+## ADR-018: Distinct Doctor-Owned Clinic Organizations and Phase 2.3 Provider Boundary
+
+**Status:** Implemented for Phase 2.3; pending external review.
+**Date:** 2026-10-25
+
+ADR-013 requires private clinics to be Hospital(type=clinic) records, while ADR-014 reserves private-clinic scheduling to the practitioner. The historical required Hospital.userId relation represented a hospital-admin owner and could not express a private doctor without conflating roles.
+
+Hospital.userId is now optional and a unique optional clinicOwnerDoctorId relation identifies the owning Doctor. A forward-only XOR constraint requires exactly one owner; doctor ownership requires type=clinic. There is at most one owned clinic per doctor in this phase. Clinic creation locks the active private doctor and atomically creates the organization, membership and attributed audit; duplicate concurrent creation fails safely. No user role changes. Existing admin-owned provider records retain their representation, but clinic organizations are excluded from hospital staff/provisioning authority.
+
+Explicit DoctorHospitalMembership remains authoritative. primaryHospitalId is convenience metadata. Provider updates reject identity, owner, rating and counter inputs. Doctor removal removes the actor hospital's membership rather than deleting a multi-hospital doctor. Staff removal deactivates the roster entry without deleting its identity or audit history.
+
+ORGANIZATION_BACKEND selects legacy or postgres explicitly. PostgreSQL provider management requires the reviewed PostgreSQL session boundary and reuses the existing infrastructure lifecycle. No fallback or production cutover is introduced. Provider availability CRUD uses RecurringAvailabilityTemplate only; booking/materialization/capacity remains Phase 2.5. Unmigrated clinical and business routes stay closed.
+
+All Node backend implementation remains JavaScript/CommonJS under the externally reviewed standardization; historical TypeScript examples and ADR-010 do not govern current implementation. See backend/prisma/ORGANIZATIONS.md for APIs, DTOs, credentials and phase limits.

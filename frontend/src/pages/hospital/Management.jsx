@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Search, Phone, Mail, Edit2, Trash2, X, Star, QrCode, Download, Badge, Users, UserCheck, Pill } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import HospitalLayout from '../../components/common/HospitalLayout';
-import api, { doctorAPI, staffAPI, authAPI } from '../../utils/api';
+import api, { doctorAPI, staffAPI, authAPI, hospitalAPI } from '../../utils/api';
 import toast from 'react-hot-toast';
 
 /* ─── Constants ─── */
@@ -26,6 +26,11 @@ export default function HospitalManagement() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [hospital, setHospital] = useState(null);
+  const [organizationBackend, setOrganizationBackend] = useState(null);
+  const isPostgres = organizationBackend === 'postgres';
+  const managementReady = Boolean(organizationBackend && (!isPostgres || hospital));
+  const [doctorActivation, setDoctorActivation] = useState(null);
+  const [showDocQR, setShowDocQR] = useState(null);
 
   /* ── Doctor States ── */
   const [doctors, setDoctors] = useState([]);
@@ -47,11 +52,12 @@ export default function HospitalManagement() {
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
 
   /* ── Load Data ── */
-  const loadDoctors = async () => {
+  const loadDoctors = async (mode = organizationBackend, profile = hospital) => {
     try {
-      const { data } = await doctorAPI.search({});
+      if (mode === 'postgres' && !profile?._id) return;
+      const { data } = await doctorAPI.search(mode === 'postgres' ? { hospital: profile._id } : {});
       setDoctors(data);
-    } catch (e) {}
+    } catch (e) { toast.error('Failed to load doctors'); }
   };
 
   const loadStaff = async () => {
@@ -61,33 +67,48 @@ export default function HospitalManagement() {
     } catch(e) { toast.error('Failed to load staff'); }
   };
 
-  const loadHospital = async () => {
-    try {
-      const { data } = await authAPI.me();
-      setHospital(data.profile);
-    } catch (e) {}
+  const loadHospital = async (mode) => {
+    const { data } = mode === 'postgres' ? await hospitalAPI.getAdminProfile() : await authAPI.me();
+    const profile = mode === 'postgres' ? data : data.profile;
+    setHospital(profile);
+    return profile;
   };
 
   useEffect(() => {
-    loadDoctors();
-    loadStaff();
-    loadHospital();
+    const load = async () => {
+      try {
+        const { data } = await api.get('/organizations/config');
+        if (!['legacy', 'postgres'].includes(data.backend)) throw new Error('Provider configuration unavailable');
+        setOrganizationBackend(data.backend);
+        const profile = await loadHospital(data.backend);
+        await Promise.all([loadDoctors(data.backend, profile), loadStaff()]);
+      } catch (e) { toast.error('Provider management is temporarily unavailable'); }
+    };
+    load();
   }, []);
 
   /* ── Doctor Handlers ── */
   const openAddDoc = () => { setDocForm(emptyDoc); setEditDoc(null); setShowDocModal(true); };
-  const openEditDoc = (doc) => {
-    setDocForm({ ...doc, qualifications: doc.qualifications?.join(', ') || '', expertise: doc.expertise?.join(', ') || '', languages: doc.languages?.join(', ') || '' });
-    setEditDoc(doc._id);
-    setShowDocModal(true);
+  const openEditDoc = async (doc) => {
+    if (!managementReady) return;
+    try {
+      const details = isPostgres ? (await api.get('/doctors/' + doc._id + '/manage')).data : doc;
+      setDocForm({ ...emptyDoc, ...details, qualifications: details.qualifications?.join(', ') || '', expertise: details.expertise?.join(', ') || '', languages: details.languages?.join(', ') || '' });
+      setEditDoc(doc._id);
+      setShowDocModal(true);
+    } catch (e) { toast.error('Failed to load doctor details'); }
   };
 
   const handleDocSubmit = async (e) => {
     e.preventDefault();
+    if (!managementReady) return toast.error('Provider management is temporarily unavailable');
     setLoading(true);
     try {
       const payload = {
-        ...docForm,
+        ...(isPostgres ? {
+          firstName: docForm.firstName, lastName: docForm.lastName, specialization: docForm.specialization,
+          phone: docForm.phone, ...(docForm.email ? { email: docForm.email } : {})
+        } : docForm),
         qualifications: docForm.qualifications.split(',').map(s => s.trim()).filter(Boolean),
         expertise: docForm.expertise.split(',').map(s => s.trim()).filter(Boolean),
         languages: docForm.languages.split(',').map(s => s.trim()).filter(Boolean),
@@ -98,7 +119,10 @@ export default function HospitalManagement() {
         await doctorAPI.updateDoctor(editDoc, payload);
         toast.success('Doctor updated successfully');
       } else {
-        await doctorAPI.addDoctor(payload);
+        const { data } = await doctorAPI.addDoctor(payload);
+        if (isPostgres && data.activation?.secret) {
+          setDoctorActivation({ uid: data.uid, ...data.activation });
+        }
         toast.success('Doctor added successfully');
       }
       setShowDocModal(false);
@@ -111,6 +135,7 @@ export default function HospitalManagement() {
   };
 
   const handleDocDelete = async (id) => {
+    if (!managementReady) return;
     if (!window.confirm('Remove this doctor?')) return;
     try {
       await doctorAPI.deleteDoctor(id);
@@ -122,6 +147,7 @@ export default function HospitalManagement() {
   /* ── Staff Handlers ── */
   const handleStaffSubmit = async (e) => {
     e.preventDefault();
+    if (!managementReady) return toast.error('Provider management is temporarily unavailable');
     setLoading(true);
     try {
       const payload = { ...staffForm, qualifications: staffForm.qualifications.split(',').map(s=>s.trim()).filter(Boolean), experience: Number(staffForm.experience) };
@@ -136,6 +162,7 @@ export default function HospitalManagement() {
   };
 
   const handleStaffDelete = async (id) => {
+    if (!managementReady) return;
     if(!window.confirm('Remove this staff member?')) return;
     try {
       await staffAPI.deleteStaff(id);
@@ -146,6 +173,7 @@ export default function HospitalManagement() {
 
   const handleLoginSetup = async (e, type) => {
     e.preventDefault();
+    if (organizationBackend !== 'legacy') return;
     setLoading(true);
     try {
       const endpoint = type === 'doctor' ? '/hospital-admin/doctor-login' : '/hospital-admin/pharmacy-login';
@@ -227,13 +255,18 @@ export default function HospitalManagement() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-primary" onClick={activeTab === 'doctors' ? openAddDoc : () => setShowStaffModal(true)}>
+          <button className="btn btn-primary" disabled={!managementReady || loading} onClick={activeTab === 'doctors' ? openAddDoc : () => setShowStaffModal(true)}>
             <Plus size={16} /> {activeTab === 'doctors' ? 'Add Doctor' : 'Recruit Staff'}
           </button>
         </div>
       </div>
 
       {/* ── Common Search ── */}
+      {isPostgres && activeTab === 'doctors' && (
+        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 16 }}>
+          New doctors receive a one-time activation token to choose their own password on the Doctor Activation page. Doctors manage their recurring availability separately.
+        </p>
+      )}
       <div className="search-bar" style={{ marginBottom: 20 }}>
         <Search size={18} color="var(--gray-400)" />
         <input 
@@ -340,9 +373,12 @@ export default function HospitalManagement() {
                 <option value="">Select Specialization</option>
                 {SPECIALIZATIONS.map(s => <option key={s}>{s}</option>)}
               </select>
+              {isPostgres && !editDoc && (
+                <input className="form-input mt-2" type="email" placeholder="Email (optional)" value={docForm.email} onChange={e => setDocForm({ ...docForm, email: e.target.value })} />
+              )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
                 <button type="button" onClick={() => setShowDocModal(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary">{loading ? 'Saving...' : 'Save'}</button>
+                <button type="submit" className="btn btn-primary" disabled={loading || !managementReady}>{loading ? 'Saving...' : 'Save'}</button>
               </div>
             </form>
           </div>
@@ -386,8 +422,35 @@ export default function HospitalManagement() {
         </div>
       )}
 
+      {showDocQR && (
+        <div className="modal-overlay" onClick={() => setShowDocQR(null)}>
+          <div className="modal" style={{ textAlign: 'center', maxWidth: 340 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ marginBottom: 20 }}>Doctor ID Card</h2>
+            {showDocQR.qrCode && <img src={showDocQR.qrCode} alt="Doctor QR" style={{ width: 180 }} />}
+            <p>{showDocQR.uid}</p>
+            <p>Dr. {showDocQR.firstName} {showDocQR.lastName}</p>
+            <button className="btn btn-secondary" onClick={() => setShowDocQR(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {doctorActivation && (
+        <div className="modal-overlay">
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="doctor-activation-title" style={{ maxWidth: 520 }}>
+            <h2 id="doctor-activation-title" style={{ marginBottom: 16 }}>Doctor activation details</h2>
+            <p style={{ marginBottom: 12 }}>Share these details directly with the doctor through a trusted private channel. This token is displayed once and is cleared when you close this message.</p>
+            <p style={{ marginBottom: 12 }}>Doctor ID: <strong>{doctorActivation.uid}</strong></p>
+            <label htmlFor="doctor-activation-token">One-time activation token</label>
+            <input id="doctor-activation-token" className="form-input" value={doctorActivation.secret} readOnly autoComplete="off" spellCheck={false} />
+            <p style={{ marginTop: 12 }}>Expires: {new Date(doctorActivation.expiresAt).toLocaleString()}</p>
+            <p style={{ marginTop: 12 }}>The doctor can enter their ID and token at <strong>/doctor-activate</strong> and choose their password.</p>
+            <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => setDoctorActivation(null)}>I have securely shared these details</button>
+          </div>
+        </div>
+      )}
+
       {/* Doctor Login Modal */}
-      {showDocLoginModal && (
+      {organizationBackend === 'legacy' && showDocLoginModal && (
         <div className="modal-overlay" onClick={() => setShowDocLoginModal(null)}>
           <div className="modal" style={{ maxWidth: 400 }}>
             <h2 style={{ marginBottom: 20 }}>Doctor Login Setup</h2>

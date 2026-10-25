@@ -9,12 +9,15 @@ const app = express();
 
 let marketplaceConnection;
 let authRuntime;
+let organizationRuntime;
+const {createOrganizationRuntime}=require('./src/organizations/runtime');
 const {startAuthRuntime}=require('./src/auth/runtime');
 async function startServer() {
   await connectDB();
   marketplaceConnection = getMarketplaceConn();
   await marketplaceConnection.asPromise();
   authRuntime=await startAuthRuntime();
+  organizationRuntime=createOrganizationRuntime(authRuntime);
 
 
   // Robust CORS configuration for Vercel/Production
@@ -70,6 +73,12 @@ async function startServer() {
       res.status(oversized ? 413 : 400).set('Cache-Control', 'no-store')
         .json({ message: oversized ? 'Authentication request is too large.' : 'Invalid authentication request.' });
     });
+  if (organizationRuntime.mode === 'postgres') {
+    app.use(['/api/hospitals','/api/doctors','/api/staff','/api/doctor-portal/availability-templates'],
+      express.json({limit:'256kb'}),
+      express.urlencoded({extended:false,limit:'256kb',parameterLimit:100}),
+      (error,req,res,next)=>res.status(error?.type==='entity.too.large'?413:400).json({message:'Invalid provider request.'}));
+  }
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -81,15 +90,25 @@ async function startServer() {
     app.use('/api/auth', require('./routes/auth'));
   }
   app.use('/api/patients', require('./routes/patients'));
-  app.use('/api/hospitals', require('./routes/hospitals'));
-  app.use('/api/doctors', require('./routes/doctors'));
-  app.use('/api/staff', require('./routes/staff'));
+  app.get('/api/organizations/config',(req,res)=>res.set('Cache-Control','no-store').json({backend:organizationRuntime.mode}));
+  if (organizationRuntime.mode === 'postgres') {
+    app.use('/api',require('./src/organizations/http').createOrganizationRouter(authRuntime,organizationRuntime.service));
+  } else {
+    app.use('/api/hospitals', require('./routes/hospitals'));
+    app.use('/api/doctors', require('./routes/doctors'));
+    app.use('/api/staff', require('./routes/staff'));
+  }
   app.use('/api/appointments', require('./routes/appointments'));
   app.use('/api/insurance', require('./routes/insurance'));
   app.use('/api/reports', require('./routes/reports'));
   app.use('/api/ocr', require('./routes/ocr'));
   app.use('/api/hospital-admin', require('./routes/hospitalAdmin'));
-  app.use('/api/doctor-portal',   require('./routes/doctorPortal'));
+  if (organizationRuntime.mode === 'postgres') {
+    // Only the provider template routes above are migrated. No virtual capacity or EHR fallback.
+    app.use('/api/doctor-portal',(req,res)=>res.status(503).json({code:'AUTH_DOMAIN_NOT_MIGRATED',message:'This account is not available in this service yet.'}));
+  } else {
+    app.use('/api/doctor-portal',require('./routes/doctorPortal'));
+  }
   app.use('/api/pharmacy-portal', require('./routes/pharmacyPortal'));
   app.use('/api/marketplace', require('./routes/marketplace'));
   app.use('/api/blood-requests', require('./routes/bloodRequests'));

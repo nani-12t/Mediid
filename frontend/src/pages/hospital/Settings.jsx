@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Building2, Phone, Award, Bed, Truck, FlaskConical, Stethoscope, Users, Plus, Pencil, Check, X } from 'lucide-react';
 import HospitalLayout from '../../components/common/HospitalLayout';
-import { hospitalAPI } from '../../utils/api';
+import api, { hospitalAPI } from '../../utils/api';
 import toast from 'react-hot-toast';
 
-const SectionCard = ({ icon: Icon, title, children, fullWidth }) => (
+const SectionCard = ({ icon: Icon, title, children, fullWidth, disabled = false }) => (
   <div className="card" style={{ gridColumn: fullWidth ? '1 / -1' : undefined }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
       <Icon size={18} color="var(--teal)" />
       <h3 style={{ fontSize: 15, fontWeight: 600 }}>{title}</h3>
     </div>
-    {children}
+    <fieldset disabled={disabled} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>{children}</fieldset>
   </div>
 );
 
@@ -21,8 +21,8 @@ const Field = ({ label, children }) => (
   </div>
 );
 
-const NumInput = ({ value, onChange, placeholder }) => (
-  <input className="form-input" type="number" min="0" value={value}
+const NumInput = ({ value, onChange, placeholder, disabled = false }) => (
+  <input className="form-input" type="number" min="0" value={value} disabled={disabled}
     onChange={onChange} placeholder={placeholder || '0'} />
 );
 
@@ -133,10 +133,14 @@ function SpecializationEditor({ items = [], onChange }) {
 export default function HospitalSettings() {
   const [form, setForm] = useState(defaultForm);
   const [loading, setLoading] = useState(false);
+  const [organizationBackend, setOrganizationBackend] = useState(null);
+  const isPostgres = organizationBackend === 'postgres';
 
   useEffect(() => {
     const load = async () => {
       try {
+        const { data: configuration } = await api.get('/organizations/config');
+        if (!['legacy', 'postgres'].includes(configuration.backend)) throw new Error('Provider configuration unavailable');
         const { data } = await hospitalAPI.getAdminProfile();
         if (data) {
           setForm(prev => ({
@@ -160,8 +164,9 @@ export default function HospitalSettings() {
             departments: { ...prev.departments, ...(data.departments || {}) },
             visitingHours: { ...prev.visitingHours, ...(data.visitingHours || {}) },
           }));
+          setOrganizationBackend(configuration.backend);
         }
-      } catch (e) {}
+      } catch (e) { toast.error('Hospital settings are temporarily unavailable'); }
     };
     load();
   }, []);
@@ -191,14 +196,32 @@ export default function HospitalSettings() {
     setForm(prev => ({ ...prev, staffing: { ...prev.staffing, [key]: !prev.staffing[key] } }));
 
   const handleSave = async () => {
+    if (!organizationBackend) return toast.error('Hospital settings are temporarily unavailable');
     setLoading(true);
     try {
-      await hospitalAPI.updateProfile({
+      const payload = isPostgres ? {
+        name: form.name,
+        address: {
+          street: form.address.street || '', city: form.address.city || '', state: form.address.state || '',
+          pincode: form.address.pincode || '', country: form.address.country || 'India'
+        },
+        contact: {
+          phone: form.contact.phone || '', email: form.contact.email || '',
+          website: form.contact.website || '', emergencyPhone: form.contact.emergencyPhone || ''
+        },
+        specialties: form.specialties.split(',').map(s => s.trim()).filter(Boolean),
+        facilities: form.facilities.split(',').map(s => s.trim()).filter(Boolean),
+        operatingHours: form.operatingHours,
+        totalBeds: Number(form.totalBeds), icuBeds: Number(form.icuBeds),
+        ...(typeof form.logo === 'string' ? { logo: form.logo } : {}),
+        ...(Array.isArray(form.photos) ? { photos: form.photos } : {})
+      } : {
         ...form,
         specialties: form.specialties.split(',').map(s => s.trim()).filter(Boolean),
         facilities: form.facilities.split(',').map(s => s.trim()).filter(Boolean),
         accreditations: form.accreditations.split(',').map(s => s.trim()).filter(Boolean),
-      });
+      };
+      await hospitalAPI.updateProfile(payload);
       toast.success('Hospital profile updated!');
     } catch { toast.error('Update failed'); }
     setLoading(false);
@@ -220,28 +243,29 @@ export default function HospitalSettings() {
           <h2 style={{ fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 2 }}>Hospital Settings</h2>
           <p style={{ color: 'var(--gray-500)', fontSize: 14 }}>Update hospital information and preferences</p>
         </div>
-        <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+        <button className="btn btn-primary" onClick={handleSave} disabled={loading || !organizationBackend}>
           <Save size={16} /> {loading ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
 
+      {isPostgres && <p style={{ color: 'var(--gray-500)', fontSize: 13, marginBottom: 16 }}>Update your hospital profile and bed totals here. Detailed operational settings will be available in a later update.</p>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
 
         {/* ── Basic Information ── */}
         <SectionCard icon={Building2} title="Basic Information">
           <Field label="Hospital Name"><input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} /></Field>
           <Field label="Type">
-            <select className="form-input form-select" value={form.type} onChange={e => set('type', e.target.value)}>
+            <select className="form-input form-select" value={form.type} disabled={isPostgres} onChange={e => set('type', e.target.value)}>
               <option value="private">Private</option><option value="government">Government</option>
               <option value="trust">Trust / NGO</option><option value="clinic">Clinic</option>
             </select>
           </Field>
           <Field label="Accreditations (e.g. NABH, JCI)">
-            <input className="form-input" placeholder="NABH, JCI" value={form.accreditations} onChange={e => set('accreditations', e.target.value)} />
+            <input className="form-input" placeholder="NABH, JCI" value={form.accreditations} disabled={isPostgres} onChange={e => set('accreditations', e.target.value)} />
           </Field>
           <div style={gridTwo}>
-            <Field label="Visiting Hours — From"><input className="form-input" type="time" value={form.visitingHours.from} onChange={e => setNested('visitingHours', 'from', e.target.value)} /></Field>
-            <Field label="Visiting Hours — To"><input className="form-input" type="time" value={form.visitingHours.to} onChange={e => setNested('visitingHours', 'to', e.target.value)} /></Field>
+            <Field label="Visiting Hours — From"><input className="form-input" type="time" disabled={isPostgres} value={form.visitingHours.from} onChange={e => setNested('visitingHours', 'from', e.target.value)} /></Field>
+            <Field label="Visiting Hours — To"><input className="form-input" type="time" disabled={isPostgres} value={form.visitingHours.to} onChange={e => setNested('visitingHours', 'to', e.target.value)} /></Field>
           </div>
         </SectionCard>
 
@@ -266,14 +290,14 @@ export default function HospitalSettings() {
           <div style={gridTwo}>
             {[['totalBeds','Total Beds'],['icuBeds','ICU Beds'],['nicuBeds','NICU Beds'],['picuBeds','PICU Beds'],
               ['ventilators','Ventilators'],['oxygenBeds','Oxygen Beds'],['isolationRooms','Isolation Rooms']].map(([k,l]) => (
-              <Field key={k} label={l}><NumInput value={form[k]} onChange={e => set(k, e.target.value)} /></Field>
+              <Field key={k} label={l}><NumInput value={form[k]} disabled={isPostgres && !['totalBeds', 'icuBeds'].includes(k)} onChange={e => set(k, e.target.value)} /></Field>
             ))}
           </div>
           <div style={{ borderTop: '1px solid var(--gray-100)', margin: '14px 0', paddingTop: 14 }}>
             <p style={subLabel}>General Wards</p>
             <div style={gridThree}>
               {[['male','Male Ward Beds'],['female','Female Ward Beds'],['children','Children Ward Beds']].map(([k,l]) => (
-                <Field key={k} label={l}><NumInput value={form.wards[k]} onChange={e => setNested('wards', k, e.target.value)} /></Field>
+                <Field key={k} label={l}><NumInput disabled={isPostgres} value={form.wards[k]} onChange={e => setNested('wards', k, e.target.value)} /></Field>
               ))}
             </div>
           </div>
@@ -281,14 +305,14 @@ export default function HospitalSettings() {
             <p style={subLabel}>Private Rooms</p>
             <div style={gridThree}>
               {[['single','Single Rooms'],['deluxe','Deluxe Rooms'],['shared','Shared Rooms']].map(([k,l]) => (
-                <Field key={k} label={l}><NumInput value={form.privateRooms[k]} onChange={e => setNested('privateRooms', k, e.target.value)} /></Field>
+                <Field key={k} label={l}><NumInput disabled={isPostgres} value={form.privateRooms[k]} onChange={e => setNested('privateRooms', k, e.target.value)} /></Field>
               ))}
             </div>
           </div>
         </SectionCard>
 
         {/* ── Operation Theaters ── */}
-        <SectionCard icon={FlaskConical} title="Operation Theaters">
+        <SectionCard icon={FlaskConical} title="Operation Theaters" disabled={isPostgres}>
           <Field label="Total OTs"><NumInput value={form.operationTheaters.total} onChange={e => setNested('operationTheaters', 'total', e.target.value)} /></Field>
           <p style={{ ...subLabel, marginTop: 12 }}>OT Breakdown by Type</p>
           <div style={gridTwo}>
@@ -299,7 +323,7 @@ export default function HospitalSettings() {
         </SectionCard>
 
         {/* ── Ambulances ── */}
-        <SectionCard icon={Truck} title="Ambulances">
+        <SectionCard icon={Truck} title="Ambulances" disabled={isPostgres}>
           <Field label="Total Ambulances"><NumInput value={form.ambulances.total} onChange={e => setNested('ambulances', 'total', e.target.value)} /></Field>
           <p style={{ ...subLabel, marginTop: 12 }}>Ambulance Type Breakdown</p>
           <div style={gridThree}>
@@ -310,7 +334,7 @@ export default function HospitalSettings() {
         </SectionCard>
 
         {/* ── Departments Available ── placed before Staffing so ticks drive dept breakdown ── */}
-        <SectionCard icon={Building2} title="Departments Available">
+        <SectionCard icon={Building2} title="Departments Available" disabled={isPostgres}>
           <p style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 12 }}>
             Ticked departments will appear in the Staffing section below for doctor counts.
           </p>
@@ -327,7 +351,7 @@ export default function HospitalSettings() {
         </SectionCard>
 
         {/* ── Staffing ── */}
-        <SectionCard icon={Users} title="Staffing" fullWidth>
+        <SectionCard icon={Users} title="Staffing" disabled={isPostgres} fullWidth>
 
           {/* Totals row */}
           <div style={gridTwo}>
@@ -415,7 +439,7 @@ export default function HospitalSettings() {
         </SectionCard>
 
         {/* ── Facilities & Availability ── */}
-        <SectionCard icon={Award} title="Facilities & Availability" fullWidth>
+        <SectionCard icon={Award} title="Facilities & Availability" disabled={isPostgres} fullWidth>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
             <div>
               <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Pharmacy</p>
@@ -447,7 +471,7 @@ export default function HospitalSettings() {
         </SectionCard>
 
         {/* ── Radiology Services ── */}
-        <SectionCard icon={Stethoscope} title="Radiology Services">
+        <SectionCard icon={Stethoscope} title="Radiology Services" disabled={isPostgres}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {[['xray','X-Ray'],['ctScan','CT Scan'],['mri','MRI'],['ultrasound','Ultrasound']].map(([key, label]) => (
               <label key={key} style={checkLabel}><input type="checkbox" style={{ width: 16, height: 16 }} checked={form.radiology[key]} onChange={e => setNested('radiology', key, e.target.checked)} /> {label}</label>

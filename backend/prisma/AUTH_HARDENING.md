@@ -8,7 +8,7 @@ Set AUTH_BACKEND explicitly to legacy or postgres. Missing/unknown values fail s
 
 Postgres mode additionally requires PG_RUNTIME_URL, AUTH_REDIS_URL, AUTH_RATE_KEY_SECRET (at least 32 bytes), exact AUTH_ALLOWED_ORIGINS, and SMTP_HOST/PORT/USER/PASS/FROM. PostgreSQL and Redis URLs require verified TLS in production. SMTP uses authenticated TLS on port 465 or STARTTLS on 587; there is no console delivery fallback. Startup checks database migration history, role safety and Redis availability. Runtime failures return fixed credential-free errors, with no Mongo authentication fallback.
 
-Provision a fresh synthetic database as described in DEVELOPMENT.md: install vector and btree_gist, apply roles.sql, assign separate credentials, and deploy all seven migrations with mediid_migrator. The original five migrations remain unchanged. New migrations are 202610240001_phase22b_sessions and 202610240002_phase22b_provisioning. The app receives only mediid_runtime credentials, never migrator credentials. Diagnostics cannot read identities, sessions or activation/audit data.
+Provision a fresh synthetic database as described in DEVELOPMENT.md: install vector and btree_gist, apply roles.sql, assign separate credentials, and deploy all eight migrations (including Phase 2.3 provider hierarchy) with mediid_migrator. The original five migrations remain unchanged. New migrations are 202610240001_phase22b_sessions and 202610240002_phase22b_provisioning. The app receives only mediid_runtime credentials, never migrator credentials. Diagnostics cannot read identities, sessions or activation/audit data.
 
 ## Sessions and browser behavior
 

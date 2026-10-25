@@ -89,7 +89,8 @@ enum OrganizationType {
 
 model Hospital {
   id                 String           @id @db.Uuid
-  userId             String           @unique @map("user_id") @db.Uuid
+  userId             String?          @unique @map("user_id") @db.Uuid
+  clinicOwnerDoctorId String?         @unique @map("clinic_owner_doctor_id") @db.Uuid
   uid                String           @unique @db.VarChar(32) // Public ID: HID-XXXXXXXX
   name               String           @db.VarChar(255)
   registrationNumber String?          @map("registration_number") @db.VarChar(128)
@@ -122,7 +123,8 @@ model Hospital {
   updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
-  user                   User                         @relation("HospitalAdminUser", fields: [userId], references: [id], onDelete: Cascade)
+  user                   User?                        @relation("HospitalAdminUser", fields: [userId], references: [id], onDelete: Cascade)
+  clinicOwnerDoctor      Doctor?                      @relation("ClinicDoctorOwner", fields: [clinicOwnerDoctorId], references: [id], onDelete: Restrict)
   primaryDoctors         Doctor[]                     @relation("PrimaryHospitalDoctors")
   memberships            DoctorHospitalMembership[]
   staffMembers           HospitalStaff[]
@@ -248,6 +250,7 @@ model Doctor {
   user                 User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
   primaryHospital      Hospital?                  @relation("PrimaryHospitalDoctors", fields: [primaryHospitalId], references: [id], onDelete: SetNull)
   hospitalMemberships  DoctorHospitalMembership[]
+  ownedClinic          Hospital?                  @relation("ClinicDoctorOwner")
   appointments                    Appointment[]
   hospitalAppointments            HospitalAppointment[]
   privateClinicAppointments       PrivateClinicAppointment[]
