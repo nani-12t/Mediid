@@ -52,11 +52,13 @@ const ROLES = [
 ];
 
 export default function Register() {
-  const { register } = useAuth();
+  const { register, authBackend } = useAuth();
+  const isPostgres = authBackend === 'postgres';
+  const availableRoles = authBackend === 'legacy' ? ROLES : ROLES.filter(option => option.value === 'patient');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const initialRole = searchParams.get('role') || 'patient';
+  const initialRole = authBackend === 'legacy' ? searchParams.get('role') || 'patient' : 'patient';
   const [role, setRole] = useState(initialRole);
   const [showPwd, setShowPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
@@ -77,6 +79,8 @@ export default function Register() {
   const selectedRole = ROLES.find(r => r.value === role);
 
   const validate = () => {
+    if (!authBackend) return 'Registration is temporarily unavailable. Please reload and try again.';
+    if (isPostgres && role !== 'patient') return 'This account requires authorized provisioning.';
     if (role === 'patient') {
       if (!form.firstName.trim()) return 'First name is required.';
       if (!form.lastName.trim()) return 'Last name is required.';
@@ -95,7 +99,8 @@ export default function Register() {
     }
     if (!form.email.trim()) return 'Email address is required.';
     if (!/\S+@\S+\.\S+/.test(form.email)) return 'Please enter a valid email address.';
-    if (form.password.length < 6) return 'Password must be at least 6 characters.';
+    if (form.password.length < (isPostgres ? 12 : 6)) return isPostgres ? 'Password must be at least 12 characters.' : 'Password must be at least 6 characters.';
+    if (isPostgres && (new Blob([form.password]).size > 72 || form.password.includes('\0'))) return 'Password is too long or contains an unsupported character.';
     if (form.password !== form.confirmPassword) return 'Passwords do not match.';
     return null;
   };
@@ -163,6 +168,8 @@ export default function Register() {
   const lbl = { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6, display: 'block' };
   const fieldWrap = { marginBottom: 14 };
 
+  if (!authBackend) return <p role="alert">Registration is temporarily unavailable. Please reload and try again.</p>;
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', background: '#f8fafc', fontFamily: "'Segoe UI', sans-serif" }}>
 
@@ -184,7 +191,7 @@ export default function Register() {
 
         {/* Role cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}>
-          {ROLES.map(r => (
+          {availableRoles.map(r => (
             <button key={r.value} type="button"
               onClick={() => { setRole(r.value); setError(''); }}
               style={{
@@ -380,7 +387,7 @@ export default function Register() {
                 <input
                   style={{ ...inp, paddingRight: 44 }}
                   type={showPwd ? 'text' : 'password'}
-                  placeholder="Min. 6 characters"
+                  placeholder={isPostgres ? "Min. 12 characters" : "Min. 6 characters"}
                   value={form.password}
                   onChange={e => set('password', e.target.value)}
                   autoComplete="new-password"

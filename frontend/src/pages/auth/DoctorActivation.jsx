@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
-import { Shield, Mail, Lock, UserCheck, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Shield, Lock, UserCheck, ChevronRight, ArrowLeft } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 export default function DoctorActivation() {
   const navigate = useNavigate();
+  const { authBackend } = useAuth();
+  const isPostgres = authBackend === 'postgres';
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     uid: '',
-    email: '',
+    activationToken: '',
     password: '',
     confirmPassword: ''
   });
@@ -27,11 +30,16 @@ export default function DoctorActivation() {
       return toast.error('Passwords do not match');
     }
 
+    if (isPostgres && (!formData.activationToken.trim() || formData.password.length < 12)) {
+      return toast.error('Provide the activation token and a password of at least 12 characters');
+    }
+
     setLoading(true);
     try {
       await api.post('/auth/doctor-activate', {
         uid: formData.uid,
-        password: formData.password
+        password: formData.password,
+        ...(isPostgres ? { activationToken: formData.activationToken.trim() } : {})
       });
       toast.success('Account activated successfully! Use your ID to login.');
       navigate('/login');
@@ -72,7 +80,7 @@ export default function DoctorActivation() {
                 </div>
                 <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>Provided by your hospital administration</p>
               </div>
-              <button type="submit" style={{ width: '100%', padding: '18px', borderRadius: 16, border: 'none', background: 'var(--teal)', color: 'white', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              <button type="submit" disabled={!authBackend} style={{ width: '100%', padding: '18px', borderRadius: 16, border: 'none', background: 'var(--teal)', color: 'white', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                 Continue <ChevronRight size={18} />
               </button>
             </div>
@@ -90,6 +98,12 @@ export default function DoctorActivation() {
                   />
                 </div>
               </div>
+              {isPostgres && (
+                <div>
+                  <label style={{ fontSize: 14, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 8 }}>Activation Token</label>
+                  <input type="text" autoComplete="off" value={formData.activationToken} onChange={e => setFormData({ ...formData, activationToken: e.target.value })} placeholder="Paste the one-time activation token" maxLength={512} required style={{ width: '100%', padding: 16, borderRadius: 12, border: '1.5px solid #f1f5f9', fontSize: 16, background: '#fcfcfc' }} />
+                </div>
+              )}
               <div>
                 <label style={{ fontSize: 14, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 8 }}>Create Password</label>
                 <div style={{ position: 'relative' }}>
@@ -119,7 +133,7 @@ export default function DoctorActivation() {
                 <button type="button" onClick={() => setStep(1)} style={{ padding: '18px', borderRadius: 16, border: '1.5px solid #e2e8f0', background: 'white', color: '#64748b', cursor: 'pointer' }}>
                   <ArrowLeft size={18} />
                 </button>
-                <button type="submit" disabled={loading} style={{ flex: 1, padding: '18px', borderRadius: 16, border: 'none', background: 'var(--teal)', color: 'white', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
+                <button type="submit" disabled={loading || !authBackend} style={{ flex: 1, padding: '18px', borderRadius: 16, border: 'none', background: 'var(--teal)', color: 'white', fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
                   {loading ? 'Activating...' : 'Activate Account'}
                 </button>
               </div>

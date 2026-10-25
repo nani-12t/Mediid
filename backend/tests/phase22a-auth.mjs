@@ -19,6 +19,7 @@ const {createAuthTestServer}=require('../src/auth/testing/harness');
 const {newPostgresId}=require('../src/identifiers/uuid');
 const cluster=await startNativeCluster(),checks=[];
 let infrastructure,server;const previousNodeEnv=process.env.NODE_ENV;
+const migrationCount=readdirSync('prisma/migrations',{withFileTypes:true}).filter(d=>d.isDirectory()).length;
 const migration='202610200003_phase22a_auth_identity';
 const correctiveSql=readFileSync('prisma/migrations/'+migration+'/migration.sql','utf8');
 const baselineSql=readFileSync('prisma/migrations/202610190001_phase131_baseline/migration.sql','utf8');
@@ -30,9 +31,9 @@ try {
  const passwords=Object.fromEntries(['mediid_migrator','mediid_runtime','mediid_diagnostics'].map(role=>[role,randomBytes(32).toString('hex')]));
  for(const role of Object.keys(passwords))await cluster.admin.query('ALTER ROLE '+role+" LOGIN PASSWORD '"+passwords[role]+"'");
  const migrationEnv={...process.env,NODE_ENV:'test',PG_ENV_FILE:path.join(cluster.root,'absent.env'),PG_MIGRATION_URL:database.url('mediid_migrator',passwords.mediid_migrator)};
- await check('all five historical/forward migrations deploy through real non-superuser Prisma credentials',async()=>{
+ await check('all historical/forward migrations deploy through real non-superuser Prisma credentials',async()=>{
   const result=spawnSync(process.execPath,['scripts/prisma.cjs','deploy'],{env:migrationEnv,encoding:'utf8',windowsHide:true,timeout:120000});
-  assert.equal(result.status,0,result.stdout+result.stderr);assert.equal((await database.db.query('SELECT count(*)::int n FROM _prisma_migrations WHERE finished_at IS NOT NULL')).rows[0].n,5);
+  assert.equal(result.status,0,result.stdout+result.stderr);assert.equal((await database.db.query('SELECT count(*)::int n FROM _prisma_migrations WHERE finished_at IS NOT NULL')).rows[0].n,migrationCount);
  });
  infrastructure=new PostgresInfrastructure(runtimeConfig({NODE_ENV:'test',PG_RUNTIME_URL:database.url('mediid_runtime',passwords.mediid_runtime)}));await infrastructure.start();
  const repository=new IdentityRepository(infrastructure);
@@ -123,7 +124,7 @@ try {
   const legacy=await cluster.database();await legacy.db.exec(baselineSql);const old=await insert(legacy.db,'users',{id:newPostgresId(),email:' Legacy@Example.Invalid ',uid:' doc-abcdef12 ',password_hash:hash,role:'doctor',updated_at:new Date()});await legacy.db.exec(correctiveSql);
   const row=(await legacy.db.query('SELECT id,email,uid,password_hash FROM users WHERE id=$1',[old.id])).rows[0];assert.equal(row.id,old.id);assert.equal(row.email,'legacy@example.invalid');assert.equal(row.uid,'DOC-ABCDEF12');assert.equal(row.password_hash,hash);await legacy.db.close();
  });
- writeFileSync('.test-data/phase22a-auth-results.json',JSON.stringify({status:'PASS',engine:(await cluster.admin.query('SELECT version()')).rows[0].version,migrations:5,passed:checks.length,checks,synthetic:true,productionAccess:false},null,2)+'\n');
+ writeFileSync('.test-data/phase22a-auth-results.json',JSON.stringify({status:'PASS',engine:(await cluster.admin.query('SELECT version()')).rows[0].version,migrations:migrationCount,passed:checks.length,checks,synthetic:true,productionAccess:false},null,2)+'\n');
  console.log(checks.length+' PostgreSQL authentication checks passed.');
 } finally {
  if(previousNodeEnv===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previousNodeEnv;

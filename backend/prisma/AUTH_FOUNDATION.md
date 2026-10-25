@@ -1,5 +1,7 @@
 # Phase 2.2A authentication foundation
 
+Historical Phase 2.2A record. Current mounted authentication, permissions, session behavior and verification are described in [AUTH_HARDENING.md](AUTH_HARDENING.md). Statements below about unmounted services, symmetric legacy JWTs and deferred sessions describe the reviewed Phase 2.2A baseline, not current Phase 2.2B behavior.
+
 ## Legacy compatibility review (before implementation)
 
 The mounted backend/routes/auth.js and middleware/auth.js use Mongo ObjectId claims named id, symmetric JWT signing with a development fallback and a seven-day default lifetime. User hashes use bcrypt cost 12. User email is trimmed/lowercased by Mongoose, while UID case handling differs between login and doctor activation. These paths remain mounted and unchanged in this phase.

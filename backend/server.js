@@ -8,10 +8,13 @@ dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || require('path').join(__d
 const app = express();
 
 let marketplaceConnection;
+let authRuntime;
+const {startAuthRuntime}=require('./src/auth/runtime');
 async function startServer() {
   await connectDB();
   marketplaceConnection = getMarketplaceConn();
   await marketplaceConnection.asPromise();
+  authRuntime=await startAuthRuntime();
 
 
   // Robust CORS configuration for Vercel/Production
@@ -26,6 +29,7 @@ async function startServer() {
 
   app.use(cors({
     origin: function (origin, callback) {
+      if (authRuntime.mode === 'postgres') return callback(null, !origin || authRuntime.http.origins.includes(origin));
       const normalizedOrigin = (origin || '').toLowerCase().replace(/\/$/, '');
 
       // 1. Allow internal requests (no origin)
@@ -50,18 +54,32 @@ async function startServer() {
       callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-Mediid-CSRF'],
     credentials: true,
     optionsSuccessStatus: 204
   }));
 
   // Explicit OPTIONS preflight handling
-  app.options('*', cors());
+  // CORS middleware above handles OPTIONS using the same exact origin policy.
+  // Authentication never needs the upload-sized business API body allowance.
+  app.use('/api/auth',
+    express.json({ limit: '16kb' }),
+    express.urlencoded({ extended: false, limit: '16kb', parameterLimit: 100 }),
+    (error, req, res, next) => {
+      const oversized = error?.type === 'entity.too.large' || error?.type === 'parameters.too.many';
+      res.status(oversized ? 413 : 400).set('Cache-Control', 'no-store')
+        .json({ message: oversized ? 'Authentication request is too large.' : 'Invalid authentication request.' });
+    });
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Routes
-  app.use('/api/auth', require('./routes/auth'));
+  if (authRuntime.mode === 'postgres') {
+    app.use('/api/auth', require('./src/auth/http').createAuthRouter(authRuntime));
+  } else {
+    app.get('/api/auth/config', (req,res) => res.json({backend:'legacy'}));
+    app.use('/api/auth', require('./routes/auth'));
+  }
   app.use('/api/patients', require('./routes/patients'));
   app.use('/api/hospitals', require('./routes/hospitals'));
   app.use('/api/doctors', require('./routes/doctors'));
@@ -81,6 +99,7 @@ async function startServer() {
 
   // Manual Seeding Route - Visit this ONCE after deployment to create dummy users
   app.get('/api/seed', async (req, res) => {
+    if(authRuntime.mode==='postgres'||process.env.NODE_ENV==='production')return res.sendStatus(404);
     try {
       const result = await seedData();
       res.json({ message: 'Seeding process completed', details: result });
@@ -89,6 +108,8 @@ async function startServer() {
       res.status(500).json({ error: 'Seed failed', message: err.message });
     }
   });
+
+  app.use((error,req,res,next)=>{res.status(error?.type==='entity.parse.failed'?400:503).json({message:'Request could not be processed.'});});
 
   const seedData = require('./seed');
   const User = require('./models/User');
@@ -100,16 +121,17 @@ async function startServer() {
   await listen(server, PORT, process.env.HOST || undefined);
 
   const { initSocket } = require('./utils/socket');
-  initSocket(server);
+  if(authRuntime.mode==='legacy')initSocket(server); // PG sockets await session-aware business authorization.
   const { initScheduler } = require('./utils/scheduler');
   initScheduler();
+  for (const signal of ['SIGTERM','SIGINT']) process.once(signal, async()=>{server.close();await authRuntime.stop();await Promise.allSettled([mongoose.disconnect(),marketplaceConnection?.close()]);process.exit(0);});
   console.log('MediID Server running on port ' + server.address().port);
 
 }
 
 startServer().catch(async (error) => {
-  console.error('MediID startup failed:', error.message);
-  await Promise.allSettled([mongoose.disconnect(), marketplaceConnection?.close()]);
+  console.error('MediID startup failed:', error.name==='AuthError'?'Authentication is unavailable.':error.message);
+  await Promise.allSettled([authRuntime?.stop(), mongoose.disconnect(), marketplaceConnection?.close()]);
   process.exitCode = 1;
 });
 

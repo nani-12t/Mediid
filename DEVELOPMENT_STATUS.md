@@ -5,16 +5,50 @@ Do not introduce TypeScript into the Node backend.
 Python/FastAPI is reserved for the separate AI service.
 
 Single active repository: Mediid-main. Reviewed baseline: eefcc3386709fa91ce6163f5da412a88778850ab.
-Workflow: direct-to-main; one tested standardization commit, no intermediate pushes.
+Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 
 | Phase | Status |
 | --- | --- |
 | Phase 1.3.1 | COMPLETE |
 | Phase 2.1 | COMPLETE |
 | Phase 2.2A | COMPLETE |
-| Phase 2.2B | NOT STARTED |
+| Phase 2.2B | IMPLEMENTED / LOCALLY VERIFIED; pending external review |
 
-## JavaScript backend standardization
+## Phase 2.2B authentication hardening — 2026-10-25
+
+IMPLEMENTED / LOCALLY VERIFIED / PENDING EXTERNAL REVIEW. Approved continuation of the existing Phase 2.2B working changes from baseline e856c99. MongoDB remains the business database; PostgreSQL auth is an explicit opt-in and no production cutover or production data access occurred.
+
+- Added configured RS256 signing/retiring public keys, versioned PostgreSQL session families, digest-only refresh rotation/replay revocation, immediate account/session invalidation and one-use password reset with authenticated TLS SMTP delivery.
+- Added real Redis source/identity throttling with safe 429/503 responses; exact origins, double-submit CSRF, HttpOnly refresh cookies and a 16 KB authentication body limit.
+- Added database-authorized hospital doctor provisioning/activation, scoped doctor memberships, distinct hospital_staff identity links and append-only runtime audit permissions.
+- Added manual nonproduction dry-run/validate/apply identity reconciliation with deterministic UUIDv5, preserved source public UID/QR/hash/time/state and hospital sequence counters, atomic per-user checkpoints and conflict refusal. Membership joining times use import time with an explicit audit basis rather than inferred historical dates.
+- Integrated frontend mode discovery, memory-only primary PostgreSQL access tokens, refresh/logout and tab coordination. Secondary hospital doctor sessions preserve the administrator cookie.
+- Added AUTH_HARDENING.md, updated setup guides, wired hardening tests into test:auth:unit and exposed the frontend test command. Fixed startup-failure cleanup and normalized mixed line endings in the new provisioning migration. The original five migrations are unchanged.
+
+Executed verification, using synthetic disposable services:
+
+| Check | Actual result |
+| --- | --- |
+| Prisma 6.19.3 validation / generation | PASS / PASS |
+| JavaScript syntax | 27 source/script files PASS |
+| Authentication unit / prior native authentication checks | 31 / 39 PASS |
+| Native session / provisioning checks | 13 / 13 PASS |
+| Real Redis distributed-limit checks | 5 PASS |
+| Synthetic Mongo/native PostgreSQL identity reconciliation | 16 PASS |
+| Mounted Express/PostgreSQL/Redis/Mongo HTTP checks | 15 PASS |
+| PostgreSQL infrastructure / infrastructure unit | 24 / 10 PASS |
+| Exact native schema / corrective review | 27 / 70 PASS |
+| Legacy MongoDB/Express runner passes | 20 PASS |
+| Frontend authentication tests | 16 PASS across 2 suites |
+| Frontend production build | PASS; existing Browserslist/fs.F_OK warnings |
+
+An initial Redis executable startup and migration CLI startup timed out; their reruns passed. Prisma generation initially encountered a Windows DLL lock while tests were using the engine; it passed with those processes stopped. The infrastructure checksum test caught mixed line endings in the new migration; normalization fixed the failure without changing SQL semantics.
+
+Postgres sessions allow only explicitly reconciled patient profile/QR and hospital-admin self-profile reads in the remaining Mongo business handlers, checked against PostgreSQL ownership. Other protected business routes return AUTH_DOMAIN_NOT_MIGRATED until their domains are migrated. New PostgreSQL-only patients can authenticate but cannot use those legacy handlers. PostgreSQL socket integration remains disabled. The explicit legacy mode retains its documented legacy limitations. Production TLS/SMTP delivery, load, deployment, OAuth/MFA and dependency-vulnerability remediation were not verified or included.
+
+Current configuration, permissions and operator procedures: [backend/prisma/AUTH_HARDENING.md](backend/prisma/AUTH_HARDENING.md).
+
+## JavaScript backend standardization (historical)
 
 IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. This is implementation-language normalization, not a new functional phase.
 

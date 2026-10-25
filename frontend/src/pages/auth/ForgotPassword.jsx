@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Shield, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { authAPI } from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 export default function ForgotPassword() {
-  const navigate = useNavigate();
-  const [step, setStep] = useState(1); // 1: Send OTP, 2: Reset Password
+  const { authBackend } = useAuth();
+  const isPostgres = authBackend === 'postgres';
+  const [step, setStep] = useState(1); // 1: Request reset, 2: Set password
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -23,10 +25,10 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       await authAPI.forgotPassword({ email });
-      toast.success('OTP verification code sent to your email.');
+      toast.success(isPostgres ? 'If eligible, reset instructions have been sent.' : 'OTP verification code sent to your email.');
       setStep(2);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send OTP. Please try again.');
+      setError(err.response?.data?.message || 'Unable to request a password reset. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -41,18 +43,18 @@ export default function ForgotPassword() {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (newPassword.length < (isPostgres ? 12 : 6)) {
+      setError(isPostgres ? 'Password must be at least 12 characters' : 'Password must be at least 6 characters');
       return;
     }
 
     setLoading(true);
     try {
-      await authAPI.resetPassword({ email, otp, newPassword });
+      await authAPI.resetPassword(isPostgres ? { token: otp.trim(), newPassword } : { email, otp, newPassword });
       toast.success('Password reset successfully!');
       setIsSuccess(true);
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid or expired OTP code.');
+      setError(err.response?.data?.message || 'The reset credential is invalid or expired.');
     } finally {
       setLoading(false);
     }
@@ -98,7 +100,7 @@ export default function ForgotPassword() {
           ) : step === 1 ? (
             <div>
               <h1 style={{ fontSize: 28, fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 6 }}>Forgot password?</h1>
-              <p style={{ color: 'var(--gray-500)', fontSize: 14, marginBottom: 32 }}>Enter your email and we'll send you a 6-digit OTP code to reset your password.</p>
+              <p style={{ color: 'var(--gray-500)', fontSize: 14, marginBottom: 32 }}>{isPostgres ? 'Enter your email to request a secure password reset token.' : "Enter your email and we'll send you a 6-digit OTP code to reset your password."}</p>
 
               {error && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fee2e2', color: '#dc2626', padding: '10px 14px', borderRadius: 8, marginBottom: 20, fontSize: 14 }}>
@@ -112,8 +114,8 @@ export default function ForgotPassword() {
                   <input className="form-input" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
                 </div>
 
-                <button type="submit" className="btn btn-primary btn-lg btn-full" disabled={loading} style={{ marginTop: 8 }}>
-                  {loading ? <><div className="spinner" style={{ width: 18, height: 18 }} /> Sending OTP...</> : 'Send OTP Code'}
+                <button type="submit" className="btn btn-primary btn-lg btn-full" disabled={loading || !authBackend} style={{ marginTop: 8 }}>
+                  {loading ? <><div className="spinner" style={{ width: 18, height: 18 }} /> Sending...</> : (isPostgres ? 'Request Password Reset' : 'Send OTP Code')}
                 </button>
               </form>
 
@@ -123,8 +125,8 @@ export default function ForgotPassword() {
             </div>
           ) : (
             <div>
-              <h1 style={{ fontSize: 28, fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 6 }}>Verify OTP Code</h1>
-              <p style={{ color: 'var(--gray-500)', fontSize: 14, marginBottom: 32 }}>We've sent a 6-digit OTP code to <strong>{email}</strong>. Enter it below along with your new password.</p>
+              <h1 style={{ fontSize: 28, fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 6 }}>{isPostgres ? 'Reset Your Password' : 'Verify OTP Code'}</h1>
+              <p style={{ color: 'var(--gray-500)', fontSize: 14, marginBottom: 32 }}>{isPostgres ? <>If an eligible account exists for <strong>{email}</strong>, use the secure token from your reset instructions below.</> : <>We've sent a 6-digit OTP code to <strong>{email}</strong>. Enter it below along with your new password.</>}</p>
 
               {error && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fee2e2', color: '#dc2626', padding: '10px 14px', borderRadius: 8, marginBottom: 20, fontSize: 14 }}>
@@ -134,8 +136,8 @@ export default function ForgotPassword() {
 
               <form onSubmit={handleResetPassword}>
                 <div className="form-group">
-                  <label className="form-label">OTP Code</label>
-                  <input className="form-input" type="text" placeholder="123456" maxLength={6} pattern="\d{6}" value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ''))} required style={{ letterSpacing: 4, fontWeight: 'bold', fontSize: 16 }} />
+                  <label className="form-label">{isPostgres ? 'Reset Token' : 'OTP Code'}</label>
+                  <input className="form-input" type="text" autoComplete="off" placeholder={isPostgres ? 'Paste your secure reset token' : '123456'} maxLength={isPostgres ? 512 : 6} pattern={isPostgres ? undefined : '[0-9]{6}'} value={otp} onChange={e => setOtp(isPostgres ? e.target.value : e.target.value.replace(/\D/g, ''))} required style={{ letterSpacing: isPostgres ? 0 : 4, fontWeight: 'bold', fontSize: 16 }} />
                 </div>
                 <div className="form-group" style={{ position: 'relative' }}>
                   <label className="form-label">New Password</label>
@@ -152,13 +154,13 @@ export default function ForgotPassword() {
                   </button>
                 </div>
 
-                <button type="submit" className="btn btn-primary btn-lg btn-full" disabled={loading} style={{ marginTop: 8 }}>
+                <button type="submit" className="btn btn-primary btn-lg btn-full" disabled={loading || !authBackend} style={{ marginTop: 8 }}>
                   {loading ? <><div className="spinner" style={{ width: 18, height: 18 }} /> Resetting...</> : 'Reset Password'}
                 </button>
               </form>
 
               <div style={{ marginTop: 24, textAlign: 'center' }}>
-                <p style={{ color: 'var(--gray-500)', fontSize: 13 }}>Didn't receive the OTP? <button type="button" onClick={handleSendOTP} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--teal)', fontWeight: 600, cursor: 'pointer', font: 'inherit' }}>Resend OTP</button></p>
+                <p style={{ color: 'var(--gray-500)', fontSize: 13 }}>{isPostgres ? 'Need new reset instructions?' : "Didn't receive the OTP?"} <button type="button" onClick={handleSendOTP} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--teal)', fontWeight: 600, cursor: 'pointer', font: 'inherit' }}>{isPostgres ? 'Request again' : 'Resend OTP'}</button></p>
               </div>
             </div>
           )}

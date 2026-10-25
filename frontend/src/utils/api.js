@@ -1,26 +1,14 @@
 import axios from 'axios';
 
-// Ensure API URL consistently ends with /api even if configured without it in Vercel
+// Ensure API URL consistently ends with /api even when configured without it.
 const getBaseURL = () => {
   let url = process.env.REACT_APP_API_URL;
-  
   if (!url) {
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-      url = 'http://localhost:5000/api';
-    } else {
-      url = 'https://backend-i4iy.vercel.app/api';
-    }
+    const local = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    url = local ? 'http://localhost:5000/api' : 'https://backend-i4iy.vercel.app/api';
   }
-  
-  // Strip trailing slashes and ensure /api is exactly there
   url = url.trim().replace(/\/+$/, '');
-  
-  if (!url.toLowerCase().endsWith('/api')) {
-    url = `${url}/api`;
-  }
-  
-  console.log('🌐 API Base URL:', url);
-  return url;
+  return url.toLowerCase().endsWith('/api') ? url : `${url}/api`;
 };
 
 const api = axios.create({
@@ -29,62 +17,227 @@ const api = axios.create({
   withCredentials: true
 });
 
-// Attach token to every request
-api.interceptors.request.use(config => {
-  const isHospitalRoute = typeof window !== 'undefined' && window.location.pathname.includes('/hospital');
-  
-  if (config.url && config.url.includes('/doctor-portal') && isHospitalRoute) {
-    const docToken = sessionStorage.getItem('hospital_doctor_token');
-    if (docToken) {
-      config.headers.Authorization = `Bearer ${docToken}`;
-      return config;
-    }
+let backendMode;
+let backendConfigPromise;
+let accessToken = null;
+let refreshPromise;
+let sessionEpoch = 0;
+let sharedAccessAllowed = false;
+let sessionChannel;
+let localSessionQueue = Promise.resolve();
+const sessionListeners = new Set();
+const sessionLockName = `mediid-auth:${api.defaults.baseURL}`;
+const authPath = config => (config?.url || '').split('?')[0].startsWith('/auth/');
+
+const usableToken = token => {
+  if (typeof token !== 'string' || token.length > 16384) return false;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return Number.isFinite(payload.exp) && payload.exp * 1000 > Date.now() + 5000;
+  } catch {
+    return false;
   }
-  const token = localStorage.getItem('mediid_token');
+};
+
+const publishSession = message => sessionChannel?.postMessage(message);
+const setAccessToken = (token, broadcast = true) => {
+  accessToken = token;
+  sharedAccessAllowed = true;
+  if (broadcast) publishSession({ type: 'access', token });
+};
+
+export const subscribeAuthSession = listener => {
+  sessionListeners.add(listener);
+  return () => sessionListeners.delete(listener);
+};
+
+export const clearAuthSession = (broadcast = true) => {
+  sessionEpoch += 1;
+  accessToken = null;
+  sharedAccessAllowed = false;
+  localStorage.removeItem('mediid_token');
+  localStorage.removeItem('mediid_user');
+  sessionStorage.removeItem('hospital_doctor_token');
+  sessionStorage.removeItem('hospital_doctor_profile');
+  sessionListeners.forEach(listener => listener());
+  if (broadcast) publishSession({ type: 'logout' });
+};
+
+const openSessionChannel = () => {
+  if (sessionChannel || typeof BroadcastChannel === 'undefined') return;
+  sessionChannel = new BroadcastChannel(sessionLockName);
+  sessionChannel.onmessage = ({ data }) => {
+    if (data?.type === 'logout') clearAuthSession(false);
+    if (data?.type === 'access-request' && usableToken(accessToken)) {
+      publishSession({ type: 'access', token: accessToken });
+    }
+    if (data?.type === 'access' && sharedAccessAllowed && usableToken(data.token)) {
+      setAccessToken(data.token, false);
+    }
+  };
+};
+
+export const getAuthBackend = async () => {
+  if (backendMode) return backendMode;
+  if (!backendConfigPromise) {
+    backendConfigPromise = api.get('/auth/config').then(({ data }) => {
+      if (!['legacy', 'postgres'].includes(data.backend)) throw new Error('Authentication configuration is unavailable.');
+      backendMode = data.backend;
+      if (backendMode === 'postgres') {
+        localStorage.removeItem('mediid_token');
+        localStorage.removeItem('mediid_user');
+        openSessionChannel();
+      }
+      return backendMode;
+    }).catch(error => {
+      backendConfigPromise = null;
+      throw error;
+    });
+  }
+  return backendConfigPromise;
+};
+
+export const saveAuthSession = data => {
+  if (backendMode === 'legacy') localStorage.setItem('mediid_token', data.token);
+  else if (backendMode === 'postgres') setAccessToken(data.token);
+  else throw new Error('Authentication configuration is unavailable.');
+};
+
+const withSessionLock = operation => {
+  const execute = () => {
+    if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+      return navigator.locks.request(sessionLockName, operation);
+    }
+    // Cross-tab races without Web Locks remain subject to server replay revocation.
+    return operation();
+  };
+  const result = localSessionQueue.then(execute);
+  localSessionQueue = result.catch(() => {});
+  return result;
+};
+
+export const refreshAuthSession = () => {
+  if (refreshPromise) return refreshPromise;
+  const previousToken = accessToken;
+  const epoch = sessionEpoch;
+  sharedAccessAllowed = true;
+  refreshPromise = (async () => {
+    if (await getAuthBackend() !== 'postgres') throw new Error('Refresh is unavailable in legacy mode.');
+    return withSessionLock(async () => {
+      if (sessionChannel) {
+        publishSession({ type: 'access-request' });
+        // Deliver broadcasts queued by the tab which just released this lock.
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      if (epoch !== sessionEpoch) throw new Error('The authentication session has ended.');
+      let response;
+      if (accessToken !== previousToken && usableToken(accessToken)) {
+        const { data } = await api.get('/auth/me');
+        response = { data: { ...data, token: accessToken } };
+      } else {
+        response = await api.post('/auth/refresh', {});
+      }
+      if (epoch !== sessionEpoch) throw new Error('The authentication session has ended.');
+      setAccessToken(response.data.token);
+      sessionListeners.forEach(listener => listener(response.data));
+      return response;
+    });
+  })().catch(error => {
+    if ([401, 403].includes(error.response?.status)) clearAuthSession();
+    throw error;
+  }).finally(() => { refreshPromise = null; });
+  return refreshPromise;
+};
+
+api.interceptors.request.use(async config => {
+  if (config.url === '/auth/config') return config;
+  const mode = await getAuthBackend();
+  if (mode === 'postgres' && authPath(config) && !['get', 'head', 'options'].includes(config.method?.toLowerCase() || 'get')) {
+    const { data } = await api.get('/auth/csrf');
+    if (typeof data.csrfToken !== 'string' || !data.csrfToken) throw new Error('The security token is unavailable.');
+    config.headers['X-Mediid-CSRF'] = data.csrfToken;
+  }
+
+  const hospitalRoute = typeof window !== 'undefined' && window.location.pathname.includes('/hospital');
+  const doctorToken = config.url?.includes('/doctor-portal') && hospitalRoute
+    ? sessionStorage.getItem('hospital_doctor_token') : null;
+  const secondaryLogout = config.url === '/auth/logout' && config.method?.toLowerCase() === 'post'
+    && config.data?.sessionOnly === true && typeof config._mediidExplicitToken === 'string';
+  const token = secondaryLogout ? config._mediidExplicitToken
+    : doctorToken || (mode === 'postgres' ? accessToken : localStorage.getItem('mediid_token'));
+  config._mediidDoctorSession = Boolean(doctorToken) || secondaryLogout;
+  config._mediidAccessToken = token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  else delete config.headers.Authorization;
   return config;
 });
 
-// Handle 401 globally
+const expirePrimarySession = () => {
+  clearAuthSession();
+  if (typeof window !== 'undefined' && !['/login', '/'].includes(window.location.pathname)) {
+    window.location.href = '/login';
+  }
+};
+
 api.interceptors.response.use(
-  res => res,
-  err => {
-    const isAuthRequest = err.config?.url?.includes('/auth/login') || err.config?.url?.includes('/auth/register');
-    
-    if (err.response?.status === 401 && !isAuthRequest) {
-      const authHeader = err.config?.headers?.Authorization || err.config?.headers?.authorization;
-      const isDoctorRequest = err.config?.url?.includes('/doctor-portal');
-      const docToken = sessionStorage.getItem('hospital_doctor_token');
-      
-      if (isDoctorRequest && docToken && authHeader === `Bearer ${docToken}`) {
-        console.warn('🔑 Doctor session expired or invalid token. Clearing doctor session.');
-        sessionStorage.removeItem('hospital_doctor_token');
-        sessionStorage.removeItem('hospital_doctor_profile');
-        window.location.reload();
-      } else {
-        console.warn('🔑 Session expired or invalid token. Clearing storage.');
-        localStorage.removeItem('mediid_token');
-        localStorage.removeItem('mediid_user');
-        sessionStorage.removeItem('hospital_doctor_token');
-        sessionStorage.removeItem('hospital_doctor_profile');
-        
-        // Only redirect if we aren't already trying to login
-        if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
-          window.location.href = '/login';
-        }
+  response => response,
+  async error => {
+    const config = error.config;
+    if (error.response?.status !== 401 || !config || authPath(config)) throw error;
+    if (config._mediidDoctorSession) {
+      sessionStorage.removeItem('hospital_doctor_token');
+      sessionStorage.removeItem('hospital_doctor_profile');
+      window.location.reload();
+      throw error;
+    }
+    if (backendMode === 'postgres' && !config._mediidRetried) {
+      config._mediidRetried = true;
+      try {
+        if (accessToken === config._mediidAccessToken || !usableToken(accessToken)) await refreshAuthSession();
+        return await api(config);
+      } catch (refreshError) {
+        if ([401, 403].includes(refreshError.response?.status)) expirePrimarySession();
+        throw refreshError;
       }
     }
-    return Promise.reject(err);
+    expirePrimarySession();
+    throw error;
   }
 );
 
-// Auth
+const signIn = (path, data) => {
+  const epoch = sessionEpoch;
+  return withSessionLock(async () => {
+    if (epoch !== sessionEpoch) throw new Error('The authentication session has ended.');
+    const response = await api.post(path, data);
+    if (epoch !== sessionEpoch) throw new Error('The authentication session has ended.');
+    if (data.refresh !== false) {
+      // Other tabs must discard the previous account/profile before a new sign-in.
+      publishSession({ type: 'logout' });
+      saveAuthSession(response.data);
+    }
+    return response;
+  });
+};
+
 export const authAPI = {
-  register: (data) => api.post('/auth/register', data),
-  login: (data) => api.post('/auth/login', data),
+  config: getAuthBackend,
+  register: data => signIn('/auth/register', data),
+  login: data => data.refresh === false ? api.post('/auth/login', data) : signIn('/auth/login', data),
   me: () => api.get('/auth/me'),
-  forgotPassword: (data) => api.post('/auth/forgot-password', data),
-  resetPassword: (data) => api.post('/auth/reset-password', data)
+  refresh: refreshAuthSession,
+  logout: async () => {
+    if (await getAuthBackend() === 'postgres') {
+      return withSessionLock(() => api.post('/auth/logout', {}));
+    }
+  },
+  logoutSecondary: async token => {
+    if (await getAuthBackend() === 'postgres') {
+      return api.post('/auth/logout', { sessionOnly: true }, { _mediidExplicitToken: token });
+    }
+  },
+  forgotPassword: data => api.post('/auth/forgot-password', data),
+  resetPassword: data => api.post('/auth/reset-password', data)
 };
 
 // Patient

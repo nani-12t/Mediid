@@ -2,13 +2,14 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {MongoMemoryServer}=require('mongodb-memory-server');
 const {spawn}=require('node:child_process');
-const {randomBytes}=require('node:crypto');
+const {randomBytes,generateKeyPairSync}=require('node:crypto');
 const net=require('node:net');
 const path=require('node:path');
 const fs=require('node:fs');
 
 test('legacy Express/MongoDB registration, login and protected routes remain compatible',{timeout:600000},async t=>{
- const secret=randomBytes(32).toString('hex');
+ const pair=generateKeyPairSync('rsa',{modulusLength:2048});
+ const rsaEnv={AUTH_BACKEND:'legacy',AUTH_JWT_ISSUER:'synthetic-legacy',AUTH_JWT_AUDIENCE:'synthetic-api',AUTH_JWT_KEY_ID:'test-key',AUTH_JWT_TTL_SECONDS:'900',AUTH_BCRYPT_COST:'12',AUTH_RESET_TTL_SECONDS:'900',AUTH_JWT_PRIVATE_KEY:pair.privateKey.export({type:'pkcs8',format:'pem'}),AUTH_JWT_PUBLIC_KEY:pair.publicKey.export({type:'spki',format:'pem'})};
  const emptyCwd=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'mediid-mongo-test-'));
  const serverPath=path.resolve('server.js');
  const mongo=await MongoMemoryServer.create({binary:{version:'7.0.30',downloadDir:path.resolve('.test-data/mongodb-binaries')},instance:{ip:'127.0.0.1'}});
@@ -16,7 +17,7 @@ test('legacy Express/MongoDB registration, login and protected routes remain com
  try{
   const lease=net.createServer();await new Promise(resolve=>lease.listen(0,'127.0.0.1',resolve));const port=lease.address().port;await new Promise(resolve=>lease.close(resolve));
   const env={};for(const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','USERPROFILE'])if(process.env[key])env[key]=process.env[key];
-  Object.assign(env,{NODE_ENV:'test',PORT:String(port),HOST:'127.0.0.1',MONGO_URI:mongo.getUri('mediid_synthetic'),MARKETPLACE_URI:mongo.getUri('marketplace_synthetic'),JWT_SECRET:secret,DOTENV_CONFIG_PATH:path.join(emptyCwd,'absent.env'),REDIS_HOST:'127.0.0.1',REDIS_PORT:'1'});
+  Object.assign(env,{NODE_ENV:'test',PORT:String(port),HOST:'127.0.0.1',MONGO_URI:mongo.getUri('mediid_synthetic'),MARKETPLACE_URI:mongo.getUri('marketplace_synthetic'),...rsaEnv,DOTENV_CONFIG_PATH:path.join(emptyCwd,'absent.env'),REDIS_HOST:'127.0.0.1',REDIS_PORT:'1'});
   child=spawn(process.execPath,[serverPath],{cwd:emptyCwd,env,stdio:['ignore','pipe','pipe']});
   let output='';child.stdout.on('data',x=>output+=x);child.stderr.on('data',x=>output+=x);
   const deadline=Date.now()+90000;

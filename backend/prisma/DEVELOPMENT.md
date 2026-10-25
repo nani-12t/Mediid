@@ -1,6 +1,6 @@
 # PostgreSQL infrastructure development
 
-MongoDB remains the operational database. Existing Express routes, authentication, appointments and frontend API contracts are unchanged. PostgreSQL is an isolated capability with no mounted PostgreSQL business repositories, request-level client creation, fallback writes or automatic dual writes. Python/FastAPI remains reserved for later AI services.
+MongoDB remains the operational business database. Authentication is explicitly selected with AUTH_BACKEND=legacy|postgres; there is no automatic cutover or fallback. PostgreSQL authentication reuses one bounded Prisma lifecycle and adds no business repositories or dual writes. See [AUTH_HARDENING.md](AUTH_HARDENING.md) for configuration, seven-migration setup, credentials, cookies and manual synthetic identity reconciliation. Python/FastAPI remains reserved for the separate AI service.
 
 ## Fresh backend setup
 
@@ -33,12 +33,14 @@ The migration wrapper accepts only the named migration role, captures raw Prisma
 3. 202610200001_phase131_review
 4. 202610200002_phase21_infrastructure_permissions
 5. 202610200003_phase22a_auth_identity
+6. 202610240001_phase22b_sessions
+7. 202610240002_phase22b_provisioning
 
-The first four merged files are unchanged. The fourth grants infrastructure metadata access only; the fifth adds narrowly scoped authentication/ownership/membership column permissions for Phase 2.2A. Runtime cannot create schema objects, mutate migration history or access unrelated clinical/business fields. Diagnostics retains metadata-only access. See AUTH_FOUNDATION.md for exact grants, identity reconciliation and authentication settings.
+The first five merged files are unchanged. The fourth grants infrastructure metadata access only; the fifth adds Phase 2.2A authentication/ownership reads. The sixth adds versioned sessions and minimal patient registration; the seventh adds audited, hospital-scoped provisioning through restricted functions. Runtime cannot create schema objects, mutate migration history or access clinical tables. Diagnostics retains metadata-only access. See AUTH_HARDENING.md for current grants, identity reconciliation and authentication settings.
 
 ## Lifecycle, readiness and pooling
 
-Use postgresInfrastructure() from src/infrastructure/postgres/client.js for one owner per process. Importing it does not connect and it is not imported by server.js. Explicit start() deduplicates concurrent initialization, validates role safety and checks migration history/checksums before client access is permitted. Missing, incomplete, unexpected or changed migrations block readiness. Only Git LF/CRLF checkout differences are tolerated; SQL-content drift is rejected. stop() is idempotent and prevents future use. Shutdown during initialization waits for cleanup.
+Use postgresInfrastructure() from src/infrastructure/postgres/client.js for one owner per process. Importing it does not connect. server.js starts it explicitly through the authentication runtime only when AUTH_BACKEND=postgres. Explicit start() deduplicates concurrent initialization, validates role safety and checks migration history/checksums before client access is permitted. Missing, incomplete, unexpected or changed migrations block readiness. Only Git LF/CRLF checkout differences are tolerated; SQL-content drift is rejected. stop() is idempotent and prevents future use. Shutdown during initialization waits for cleanup.
 
 PG_POOL_SIZE defaults to 4 in development, 2 in tests and 10 in production (range 1-50 per process). Size the total across worker processes against the server limit. PG_CONNECT_TIMEOUT_SECONDS defaults to 3, pool wait to 5 and query timeout to 10. Initial connection attempts default to 3 with 250ms delay; only temporary availability failures are retried. Authentication/configuration/migration/permission failures fail immediately. No business writes are retried. Strict production URLs require sslmode=require and sslaccept=strict, plus your trusted CA settings when needed. Prisma certificate paths are relative to its schema directory.
 
@@ -57,12 +59,12 @@ On Windows with PostgreSQL 18 server headers and Visual Studio C++ Build Tools, 
     npm run check:js
     npm run test:legacy
 
-The exact gate executes all three original migration files unchanged, verifies both extensions and a real vector operator, then runs 27 schema and 70 review checks on native PostgreSQL. The concurrency suite now requires real pgvector and never removes SQL. The infrastructure suite uses Prisma to deploy all five migrations with non-superuser migration credentials and tests real role permissions, pooling, missing/drifted migrations, connection/auth failures and client/process shutdown. Pure identifier/configuration tests are separate. Production TLS chains, managed poolers, production load and production deployment remain outside this local verification.
+The exact gate executes all three original migration files unchanged, verifies both extensions and a real vector operator, then runs 27 schema and 70 review checks on native PostgreSQL. The concurrency suite now requires real pgvector and never removes SQL. The infrastructure suite uses Prisma to deploy all seven migrations with non-superuser migration credentials and tests real role permissions, pooling, missing/drifted migrations, connection/auth failures and client/process shutdown. Pure identifier/configuration tests are separate. Production TLS chains, managed poolers, production load and production deployment remain outside this local verification.
 
 ## Ownership and remaining security work
 
 Public MEDIID UIDs are unchanged. Legacy ObjectId conversion uses the frozen UUIDv5 namespace 57c0c744-9cdc-41f9-a532-7e60be63d87f and rejects noncanonical input instead of silently remapping it. New PostgreSQL IDs use a separately pinned UUIDv7 library; the existing UUID dependency used by MongoDB routes is preserved.
 
-Fresh dependency findings and affected paths are in ../../security/audits/phase21. They are unresolved; no forced major upgrades were performed. Phase 2.2A adds isolated auth services only; see AUTH_FOUNDATION.md. No operational auth cutover, Phase 2.2B or production data migration is included.
+Fresh dependency findings and affected paths are in ../../security/audits/phase21. They are unresolved; no forced major upgrades were performed. Phase 2.2B adds explicit-mode authentication hardening; see AUTH_HARDENING.md. Production cutover, production data migration and broader business-domain migration remain deferred.
 
 References: [Prisma v6 PostgreSQL settings](https://docs.prisma.io/docs/orm/v6/overview/databases/postgresql), [PostgreSQL 18 extension paths](https://www.postgresql.org/docs/18/runtime-config-client.html), [official pgvector build instructions](https://github.com/pgvector/pgvector/tree/v0.8.2).

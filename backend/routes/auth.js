@@ -2,7 +2,7 @@ const express = require('express');
 const router  = express.Router();
 const mongoose = require('mongoose');
 const { connectDB } = require('../config/db');
-const jwt     = require('jsonwebtoken');
+const { issueLegacyToken } = require('../src/auth/runtime');
 const { body, validationResult } = require('express-validator');
 const User     = require('../models/User');
 const Patient  = require('../models/Patient');
@@ -13,10 +13,7 @@ const { generatePatientIDAndQR, generateHospitalIDAndQR } = require('../utils/id
 const Doctor = require('../models/Doctor');
 const Pharmacy = require('../models/Pharmacy');
 
-const generateToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET || 'mediid_secret', {
-    expiresIn: process.env.JWT_EXPIRE || '7d',
-  });
+const generateToken = (id, role) => issueLegacyToken(id, role);
 
 /* ══════════════════════════════════════════════════
    POST /api/auth/register
@@ -33,24 +30,20 @@ router.post('/register', [
 
   try {
     const { email, password, role, firstName, lastName, hospitalName, phone, registrationNumber } = req.body;
-    console.log(`📝 Registration attempt for: ${email} (Role: ${role})`);
 
     const existing = await User.findOne({ email });
     if (existing) {
-      console.log(`⚠️ Registration failed: Email ${email} already exists`);
       return res.status(409).json({ message: 'Email already registered' });
     }
 
     const user = await User.create({ email, password, role });
-    console.log(`✅ User record created: ${user._id}`);
 
     let profile = null;
 
     if (role === 'patient') {
       const name = `${(firstName || '').trim()} ${(lastName || '').trim()}`.trim() || email;
-      console.log(`🧬 Generating ID/QR for patient: ${name}`);
       const { uid, qrCode } = await generatePatientIDAndQR({ name, email });
-      
+
       await Patient.create({
         user:      user._id,
         firstName: (firstName || '').trim(),
@@ -59,14 +52,12 @@ router.post('/register', [
         uid,
         qrCode,
       });
-      console.log(`✅ Patient profile created: ${uid}`);
       profile = await Patient.findOne({ user: user._id }).select('uid firstName lastName profilePhoto qrCode phone');
 
     } else if (role === 'hospital_admin') {
       const name = (hospitalName || `${firstName || ''} ${lastName || ''}`).trim() || email;
-      console.log(`🏥 Generating ID/QR for hospital: ${name} (Reg: ${registrationNumber})`);
       const { uid, qrCode } = await generateHospitalIDAndQR(registrationNumber, { name, email, registrationNumber });
-      
+
       await Hospital.create({
         user:    user._id,
         name,
@@ -75,12 +66,10 @@ router.post('/register', [
         registrationNumber: registrationNumber || '',
         contact: { email, phone: phone || '' },
       });
-      console.log(`✅ Hospital profile created: ${uid}`);
       profile = await Hospital.findOne({ user: user._id }).select('uid name logo qrCode');
 
     } else if (role === 'buyer') {
       const companyName = (req.body.companyName || `${firstName || ''} ${lastName || ''}`).trim() || email;
-      console.log(`🛒 Creating Buyer profile: ${companyName}`);
       const buyer = await Buyer.create({
         user:        user._id,
         companyName,
@@ -88,7 +77,6 @@ router.post('/register', [
         description: req.body.description || '',
         website:     req.body.website || '',
       });
-      console.log(`✅ Buyer profile created: ${buyer._id}`);
       profile = { id: buyer._id, companyName: buyer.companyName };
 
     } else if (role === 'doctor') {
@@ -120,20 +108,17 @@ router.post('/register', [
         status:             'offline',  // awaiting linkage
         isActive:           false,      // requires admin approval
       });
-      console.log(`✅ Doctor self-registered (pending): ${doctorProfile._id}`);
       profile = { id: doctorProfile._id, firstName: doctorProfile.firstName, lastName: doctorProfile.lastName, status: 'pending_approval' };
     }
 
-    const token = generateToken(user._id);
-    console.log(`🎉 Registration successful for ${email}`);
+    const token = generateToken(user._id, user.role);
     res.status(201).json({
       token,
       user:    { id: user._id, email: user.email, role: user.role },
       profile,
     });
   } catch (error) {
-    console.error('❌ Register error detail:', error);
-    res.status(500).json({ message: 'Server error during registration', error: error.message });
+    res.status(500).json({ message: 'Server error during registration' });
   }
 });
 
@@ -145,42 +130,36 @@ router.post('/doctor-activate', async (req, res) => {
   try {
     let { uid, password } = req.body;
     uid = String(uid).trim().toUpperCase();
-    
-    console.log(`🏥 Activation attempt for Doctor ID: ${uid}`);
-    
+
+
     // Find doctor by UID
     const doctor = await Doctor.findOne({ uid });
     if (!doctor) {
-      console.warn(`❌ Activation failed: Doctor ID '${uid}' not found`);
       return res.status(404).json({ message: `Doctor ID '${uid}' not found in our records.` });
     }
-    
+
     // Check if already activated
     if (doctor.user) {
-      console.warn(`⚠️ Activation failed: Doctor ID '${uid}' already active`);
       return res.status(400).json({ message: 'This professional account has already been activated. Please login.' });
     }
 
     // Create User with UID and email
     const user = await User.create({ uid, email: doctor.email, password, role: 'doctor' });
-    
+
     // Link to doctor profile
     doctor.user = user._id;
     await doctor.save();
 
-    console.log(`✅ Doctor activated: ${uid} -> User ID: ${user._id}`);
 
-    const token = generateToken(user._id);
-    res.status(201).json({ 
-      token, 
+    const token = generateToken(user._id, user.role);
+    res.status(201).json({
+      token,
       user: { id: user._id, email: user.email, uid: user.uid, role: user.role },
-      profile: doctor 
+      profile: doctor
     });
   } catch (error) {
-    console.error('🔥 Activation error detail:', error);
-    res.status(500).json({ 
-      message: error.code === 11000 ? 'ID already activated' : 'Activation failed', 
-      error: error.message 
+    res.status(500).json({
+      message: error.code === 11000 ? 'ID already activated' : 'Activation failed'
     });
   }
 });
@@ -199,28 +178,28 @@ router.post('/login', [
 
     try {
     const { email, password } = req.body;
-    
+
     // Search by email OR uid (for doctors)
-    const user = await User.findOne({ 
+    const user = await User.findOne({
       $or: [
         { email: email?.toLowerCase() },
         { uid: email } // 'email' field in request can be the UID
       ]
     });
-    
+
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
+    if (!isMatch || !user.isActive) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     user.lastLogin = new Date();
     await user.save();
 
-    const token = generateToken(user._id);
+    const token = generateToken(user._id, user.role);
 
     let profile = null;
     if (user.role === 'patient') {
@@ -237,10 +216,9 @@ router.post('/login', [
 
     res.json({ token, user: { id: user._id, email: user.email, role: user.role }, profile });
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Server error during login', 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    res.status(500).json({
+      message: 'Server error during login',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -278,11 +256,7 @@ const sendOTPEmail = async (email, otp) => {
   const from = process.env.SMTP_FROM || 'noreply@mediid.com';
 
   if (!host || !user || !pass) {
-    console.log(`\n📧 [EMAIL DEV]`);
-    console.log(`   To  : ${email}`);
-    console.log(`   OTP : ${otp}`);
-    console.log(`   Msg : Your MediID password reset OTP is ${otp}. It is valid for 15 minutes.\n`);
-    return true;
+    return false;
   }
 
   try {
@@ -311,10 +285,8 @@ const sendOTPEmail = async (email, otp) => {
         </div>
       `
     });
-    console.log(`✅ Reset OTP email sent to ${email}`);
     return true;
   } catch (error) {
-    console.error(`❌ Failed to send reset OTP email to ${email}:`, error.message);
     return false;
   }
 };
@@ -333,9 +305,8 @@ router.post('/forgot-password', [
   try {
     const { email } = req.body;
     const user = await User.findOne({ email: email.toLowerCase() });
-    
+
     if (!user) {
-      console.log(`⚠️ Forgot password request for non-existent email: ${email}`);
       return res.json({ message: 'If that email is registered, an OTP has been sent.' });
     }
 
@@ -349,7 +320,6 @@ router.post('/forgot-password', [
 
     res.json({ message: 'If that email is registered, an OTP has been sent.' });
   } catch (error) {
-    console.error('🔥 Forgot password error:', error);
     res.status(500).json({ message: 'Server error during forgot password' });
   }
 });
@@ -385,10 +355,8 @@ router.post('/reset-password', [
     user.resetPasswordExpire = undefined;
     await user.save();
 
-    console.log(`✅ Password successfully reset for user: ${email}`);
     res.json({ message: 'Password has been reset successfully. You can now login.' });
   } catch (error) {
-    console.error('🔥 Reset password error:', error);
     res.status(500).json({ message: 'Server error during password reset' });
   }
 });

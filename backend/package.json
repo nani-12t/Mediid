@@ -20,9 +20,15 @@
     "db:diagnostics": "node src/infrastructure/postgres/cli.js readonly",
     "db:migrate:deploy": "node scripts/prisma.cjs deploy",
     "db:migrate:status": "node scripts/prisma.cjs status",
-    "test:auth:unit": "node --test tests/auth-unit.test.cjs",
+    "test:auth:unit": "node --test tests/auth-unit.test.cjs tests/auth-hardening-unit.test.cjs",
     "test:auth": "node tests/phase22a-auth.mjs",
-    "check:js": "node scripts/check-js.cjs"
+    "check:js": "node scripts/check-js.cjs",
+    "test:auth:sessions": "node tests/phase22b-sessions.mjs",
+    "test:auth:redis": "node tests/phase22b-redis.mjs",
+    "test:auth:provisioning": "node tests/phase22b-provisioning.mjs",
+    "test:auth:migration": "node tests/phase22b-migration.mjs",
+    "test:auth:http": "node tests/phase22b-http.mjs",
+    "auth:migrate": "node scripts/migrate-auth.cjs"
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.5",

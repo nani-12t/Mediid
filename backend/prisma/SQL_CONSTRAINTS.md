@@ -66,3 +66,10 @@ Reproduction command: npm run test:review:reproduce (only original migrations). 
 ## Phase 2.1 verification closure
 
 The exact native gate passes all 27 schema and 70 review checks with both real extensions. Four independent-connection races also pass without SQL rewriting. The original three migrations and constraints.sql remain unchanged. The new infrastructure permission migration grants only metadata access to runtime/diagnostics; no business repository access is enabled. See DEVELOPMENT.md for provisioning, credentials, migration deployment and lifecycle commands. Reservation deadlines must be copied from the stored booking inside SQL, preserving timestamptz(6) microseconds rather than round-tripping through JavaScript Date.
+
+Phase 2.2B forward execution order (the five historical migrations remain unchanged):
+
+6. `202610240001_phase22b_sessions`: sessions, refresh families/digests, auth-version invalidation, explicit compatibility metadata and patient-only runtime registration guard.
+7. `202610240002_phase22b_provisioning`: doctor activation, attributable hospital memberships and explicit staff identity link with scoped SECURITY DEFINER operations.
+
+Deploy all seven directories in lexical order through the existing separate migrator credential. Do not concatenate or reapply merged migrations; existing databases require the normal Prisma migration ledger. See AUTH_HARDENING.md for current grants and limitations.

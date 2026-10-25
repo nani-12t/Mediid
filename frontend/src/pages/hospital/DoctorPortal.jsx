@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import HospitalLayout from '../../components/common/HospitalLayout';
 
 export default function DoctorPortal() {
-  const { profile: adminProfile } = useAuth(); // Logged-in hospital admin profile
+  const { profile: adminProfile, authBackend } = useAuth(); // Logged-in hospital admin profile
   const [doctorToken, setDoctorToken] = useState(sessionStorage.getItem('hospital_doctor_token') || '');
   const [doctorProfile, setDoctorProfile] = useState(() => {
     const raw = sessionStorage.getItem('hospital_doctor_profile');
@@ -166,7 +166,8 @@ export default function DoctorPortal() {
     try {
       const { data } = await authAPI.login({
         email: loginForm.emailOrUid.trim(),
-        password: loginForm.password
+        password: loginForm.password,
+        refresh: false
       });
 
       if (data.user.role !== 'doctor') {
@@ -174,12 +175,14 @@ export default function DoctorPortal() {
         return setLoginError('Access denied: Selected account is not a Doctor.');
       }
 
-      const docHospitalId = data.profile?.hospital?._id || data.profile?.hospital;
+      const docHospitalId = authBackend === 'postgres'
+        ? data.profile?.authorizedHospitalId
+        : data.profile?.hospital?._id || data.profile?.hospital;
       const adminHospitalId = adminProfile?._id;
 
-      if (docHospitalId !== adminHospitalId) {
+      if (!docHospitalId || !adminHospitalId || docHospitalId !== adminHospitalId) {
         setLoginLoading(false);
-        return setLoginError(`Access denied: Dr. ${data.profile?.firstName} is registered under another hospital and cannot access this clinic workbench.`);
+        return setLoginError(`Access denied: Dr. ${data.profile?.firstName} does not have access to this hospital workbench.`);
       }
 
       sessionStorage.setItem('hospital_doctor_token', data.token);
@@ -196,13 +199,19 @@ export default function DoctorPortal() {
   };
 
   // Doctor logout
-  const handleDoctorLogout = () => {
+  const handleDoctorLogout = async () => {
+    const activeDoctorToken = doctorToken;
     sessionStorage.removeItem('hospital_doctor_token');
     sessionStorage.removeItem('hospital_doctor_profile');
     setDoctorToken('');
     setDoctorProfile(null);
     setSelectedPatient(null);
-    toast.success('Doctor logged out from workstation.');
+    try {
+      await authAPI.logoutSecondary(activeDoctorToken);
+      toast.success('Doctor logged out from workstation.');
+    } catch {
+      toast.error('Doctor server sign-out could not be confirmed. Please sign in again to retry.');
+    }
   };
 
   // Patient Lookup handler

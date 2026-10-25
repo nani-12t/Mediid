@@ -27,6 +27,13 @@ enum UserRole {
 }
 
 model User {
+  authVersion Int @default(0) @map("auth_version")
+  authSessions AuthSession[]
+  authLegacyLink AuthLegacyLink?
+  authProfile AuthProfile?
+  hospitalStaff HospitalStaff? @relation("HospitalStaffUser")
+  issuedDoctorActivations DoctorActivationCredential[] @relation("DoctorActivationIssuer")
+  provisioningAudit AuthProvisioningAudit[] @relation("ProvisioningActor")
   id                     String    @id @db.Uuid // Migrated: UUIDv5, New: UUIDv7
   email                  String?   @unique @db.VarChar(255)
   uid                    String?   @unique @db.VarChar(64)
@@ -171,6 +178,8 @@ enum StaffRole {
 }
 
 model HospitalStaff {
+  userId String? @unique @map("user_id") @db.Uuid
+  user User? @relation("HospitalStaffUser", fields:[userId], references:[id], onDelete:SetNull)
   id             String    @id @db.Uuid
   hospitalId     String    @map("hospital_id") @db.Uuid
   uid            String    @unique @db.VarChar(64) // e.g. HID-XXXXXXXX-STF-0001
@@ -208,6 +217,7 @@ enum DoctorStatus {
 }
 
 model Doctor {
+  activationCredentials DoctorActivationCredential[]
   id                 String       @id @db.Uuid
   userId             String?      @unique @map("user_id") @db.Uuid
   primaryHospitalId  String?      @map("primary_hospital_id") @db.Uuid // Nullable for independent private clinic doctors
@@ -1807,4 +1817,72 @@ model AppointmentFinancialEvent {
 enum CancellationRefundResolution {
   REFUND
   PATIENT_APPROVED_TRANSFER
+}
+
+// Phase 2.2B auth-only additions. Partial current-family index lives in forward SQL.
+model AuthSession {
+ id String @id @db.Uuid
+ userId String @map("user_id") @db.Uuid
+ user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+ familyId String @map("family_id") @db.Uuid
+ refreshDigest String @unique @map("refresh_digest") @db.VarChar(64)
+ issuedAt DateTime @default(dbgenerated("clock_timestamp()")) @map("issued_at") @db.Timestamptz(6)
+ expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+ lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+ consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+ replacementId String? @map("replacement_id") @db.Uuid
+ replacement AuthSession? @relation("RefreshReplacement", fields:[replacementId], references:[id], onDelete:NoAction, onUpdate:NoAction)
+ predecessors AuthSession[] @relation("RefreshReplacement")
+ revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+ revokeReason String? @map("revoke_reason")
+ authVersion Int @map("auth_version")
+ @@index([userId])
+ @@index([familyId])
+ @@map("auth_sessions")
+}
+model AuthLegacyLink {
+ userId String @id @map("user_id") @db.Uuid
+ user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+ mongoUserId String @unique @map("mongo_user_id") @db.VarChar(24)
+ patientMongoId String? @map("patient_mongo_id") @db.VarChar(24)
+ doctorMongoId String? @map("doctor_mongo_id") @db.VarChar(24)
+ hospitalMongoId String? @map("hospital_mongo_id") @db.VarChar(24)
+ sourceFingerprint String @map("source_fingerprint") @db.VarChar(64)
+ migratedAt DateTime @default(now()) @map("migrated_at") @db.Timestamptz(6)
+ @@map("auth_legacy_links")
+}
+model AuthProfile {
+ userId String @id @map("user_id") @db.Uuid
+ user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+ profileKind String @map("profile_kind")
+ publicUid String? @map("public_uid") @db.VarChar(64)
+ legacyProfileId String? @map("legacy_profile_id") @db.VarChar(24)
+ safeProfile Json @map("safe_profile")
+ @@map("auth_profiles")
+}
+model DoctorActivationCredential {
+ id String @id @db.Uuid
+ doctorId String @map("doctor_id") @db.Uuid
+ doctor Doctor @relation(fields:[doctorId], references:[id], onDelete:Cascade)
+ issuedByUserId String @map("issued_by_user_id") @db.Uuid
+ issuer User @relation("DoctorActivationIssuer", fields:[issuedByUserId], references:[id], onDelete:Restrict)
+ tokenDigest String @unique @map("token_digest") @db.VarChar(64)
+ expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+ consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@index([doctorId])
+ @@map("doctor_activation_credentials")
+}
+model AuthProvisioningAudit {
+ id String @id @db.Uuid
+ actorUserId String @map("actor_user_id") @db.Uuid
+ actor User @relation("ProvisioningActor", fields:[actorUserId], references:[id], onDelete:Restrict)
+ action String @db.Text
+ doctorId String? @map("doctor_id") @db.Uuid
+ hospitalId String? @map("hospital_id") @db.Uuid
+ staffId String? @map("staff_id") @db.Uuid
+ occurredAt DateTime @default(dbgenerated("clock_timestamp()")) @map("occurred_at") @db.Timestamptz(6)
+ details Json @default("{}")
+ @@index([actorUserId,occurredAt])
+ @@map("auth_provisioning_audit")
 }

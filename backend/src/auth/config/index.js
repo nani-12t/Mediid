@@ -34,7 +34,17 @@ function authConfig(env = process.env) {
             type: 'spki',
             format: 'der'
         }))) throw new AuthError('AUTH_CONFIG');
+        const previousPublicKeys = Object.create(null);
+        const previous = JSON.parse(env.AUTH_JWT_PREVIOUS_PUBLIC_KEYS || '{}');
+        if (!previous || Array.isArray(previous) || typeof previous !== 'object' || Object.keys(previous).length > 5) throw new AuthError('AUTH_CONFIG');
+        for (const [id, pem] of Object.entries(previous)) {
+            if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || id === keyId || typeof pem !== 'string' || !pem.includes('BEGIN PUBLIC KEY') || pem.includes('PRIVATE')) throw new AuthError('AUTH_CONFIG');
+            const key = createPublicKey(pem.replace(/\\n/g, '\n'));
+            if (key.asymmetricKeyType !== 'rsa' || (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) throw new AuthError('AUTH_CONFIG');
+            previousPublicKeys[id] = key;
+        }
         return Object.freeze({
+            previousPublicKeys: Object.freeze(previousPublicKeys),
             issuer,
             audience,
             keyId,

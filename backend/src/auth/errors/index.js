@@ -1,6 +1,8 @@
 'use strict';
 
 const responses = {
+    AUTH_RATE_LIMIT: {status:429,message:'Too many authentication attempts. Try again later.'},
+    AUTH_DOMAIN_NOT_MIGRATED: {status:503,message:'This account is not available in this service yet.'},
     AUTH_CONFIG: {
         status: 503,
         message: 'Authentication is unavailable.'
