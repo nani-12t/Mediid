@@ -51,7 +51,7 @@ try {
   const env = {};
   for (const key of ['PATH', 'Path', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE']) if (process.env[key]) env[key] = process.env[key];
   Object.assign(env, {
-    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(await port()), AUTH_BACKEND: 'postgres', ORGANIZATION_BACKEND: 'legacy',
+    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(await port()), AUTH_BACKEND: 'postgres', ORGANIZATION_BACKEND: 'legacy', PATIENT_BACKEND: 'legacy',
     MONGO_URI: mongo.getUri('mediid_http_synthetic'), MARKETPLACE_URI: mongo.getUri('marketplace_http_synthetic'),
     DOTENV_CONFIG_PATH: path.join(cluster.root, 'absent.env'), PG_ENV_FILE: path.join(cluster.root, 'absent.env'),
     PG_RUNTIME_URL: database.url('mediid_runtime', credentials.mediid_runtime), AUTH_REDIS_URL: redis.url,

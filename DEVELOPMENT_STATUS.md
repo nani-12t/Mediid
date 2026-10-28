@@ -6,6 +6,7 @@ Python/FastAPI is reserved for the separate AI service.
 
 Single active repository: Mediid-main. Phase 2.3 implementation baseline: 061d7f7f4d91a149aead14d68b4176cb338a00f8.
 Group-clinic correction baseline: b1548d87bb9c6b81da728bdd702a9895c2de6e99.
+Phase 2.4 implementation baseline: 908cb967afd9162e3a9be78d71cd13c477be4ffe (externally reviewed Phase 2.3 correction).
 Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 
 | Phase | Status |
@@ -15,12 +16,59 @@ Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 | Phase 2.2A | COMPLETE |
 | JavaScript Standardization | COMPLETE (externally reviewed) |
 | Phase 2.2B | COMPLETE (externally reviewed) |
-| Phase 2.3 | IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW |
-| Phase 2.4 | NOT STARTED |
+| Phase 2.3 | COMPLETE (externally reviewed, including group-clinic correction) |
+| Phase 2.4 | IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW |
+| Phase 2.5 | NOT STARTED |
+
+## Phase 2.4 patient demographics and benefits - 2026-10-28
+
+Phase 2.4 - IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. All required checks passed; external review is pending. Phase 2.5 is NOT STARTED. Baseline: clean main and origin/main at externally reviewed 908cb967afd9162e3a9be78d71cd13c477be4ffe.
+
+The JavaScript/CommonJS patient domain adds explicit PATIENT_BACKEND=legacy|postgres selection, requiring PostgreSQL authentication and organizations for PostgreSQL patient mode. Missing/auto/incompatible settings fail closed. There is no Mongo fallback, production switch, automatic dual write or full historical backfill.
+
+The new forward-only migration 202610280002_phase24_patient_demographics_benefits adds scoped functions and benefit integrity checks, including rejection of PostgreSQL numeric NaN as well as negative values. All nine historical migrations and the existing Patient/PatientBenefit/trusted-provider models remain unchanged. Private functions recheck active User role patient, linked ownership and matching User/Patient public UID. Existing registration retains its reviewed transaction/session flow, reuses centralized cryptographic MID generation and persists phone through the scoped mutation.
+
+Profile GET/PUT provides bounded partial demographics and emergency-card fields, preserves unrelated concurrent patches and transactionally rebuilds safe auth presentation from identity/names/phone only. Compatibility DTOs preserve proven legacy ObjectIds, separate internal UUIDs and existing public UIDs; benefits and trusted providers are real PostgreSQL data. documents, bills, medicalHistory and legacy clinical emergency arrays are empty compatibility arrays. Clinical inputs and unmigrated document/billing operations fail explicitly.
+
+Only a domain-separated HMAC-SHA-256 Aadhaar digest is persisted, using a required strong environment secret. No plaintext/digest is returned or copied into auth, QR, Redis, public scans or logs. aadhaarPresent drives secure-storage wording and a blank replacement input; no government verification is claimed. Explicit null clears the digest.
+
+Owner QR payloads contain public UID/type/routing only and are generated/cache-bounded without PostgreSQL image persistence. Public canonical-MID scans require active linked patient identity and qrActive=true, returning only UID/name/blood group/emergency contact/organ donor fields. Distributed Redis HMAC source/identity windows enforce scan limits across instances and fail unavailable if Redis fails.
+
+Government, employer and personal PatientBenefit records use strict source/type/field/date/array allowlists and precise nonnegative PostgreSQL Decimal values returned as strings. New records use UUIDv7; owner-only deletion deactivates rather than destroys history. The legacy government endpoint explicitly maps supported aliases into the same rows; governmentBenefits/insurancePolicies are derived DTOs.
+
+Patient-owned doctor/hospital preferences are idempotent and support active clinics plus proven Phase 2.3 identifier mappings. Lists expose public summaries only. Trusted provider != clinical consent. No EHR, clinical, billing, document, clinic membership, calendar, role or support authority is granted. Runtime receives only narrow function EXECUTE permissions; direct clinical/billing/research access remains closed.
+
+### Phase 2.4 verification
+
+All required results below are actual executed checks against the final implementation; no check was skipped.
+
+| Required check | Actual result |
+| --- | --- |
+| Prisma 6.19.3 validation / generation; JavaScript syntax | PASS / PASS; 41 files PASS |
+| New patient unit / native integration / actual server | 12 / 33 / 16 PASS |
+| Independent native patient patch / doctor trust / hospital trust / ownership isolation | 4 PASS, distinct actual PostgreSQL backend connections |
+| Native schema / review / existing concurrency | 27 / 70 / 4 PASS |
+| Infrastructure native / units | 24 / 10 PASS; all 10 migrations deployed |
+| Phase 2.2 auth unit / native foundation | 31 / 39 PASS |
+| Sessions / provisioning / Redis | 13 / 13 / 5 PASS |
+| Identity reconciliation / hospital_staff / mounted auth HTTP | 16 / 11 / 15 PASS |
+| Phase 2.3 organization unit / native / group-clinic / actual server | 8 / 26 / 28 / 14 PASS |
+| Mongo/Express legacy regressions | 20 PASS |
+| Frontend auth/provider/patient tests / production build | 41 PASS / PASS |
+
+All required Phase 2.4 checks completed successfully; none were skipped. The 33-check native patient suite uses the actual restricted runtime credential and verifies current-state ownership/role denials, bounded profile/benefit mutation, exact Decimal strings, safe legacy DTOs, deterministic HMAC storage without plaintext/hash exposure, safe auth synchronization, QR identity-only payloads, narrow public cards, qrActive/inactive-user hiding, proven mappings and preference isolation. It confirms all four new native integrity checks, including numeric NaN insert rejection with SQLSTATE 23514, and runtime denial of direct private/clinical/billing/research access.
+
+Four independent-connection PostgreSQL races verify preservation of simultaneous phone/emergency-contact patches, one canonical trusted-doctor relationship, one canonical trusted-hospital relationship and benefit ownership isolation during concurrent changes. Distinct backend PIDs and one-connection infrastructure pools provide native evidence; no PGlite concurrency substitution is used.
+
+The 16 actual-server checks verify PostgreSQL-only registration/profile/QR/benefits/trust, valid and incompatible mode combinations, safe missing-record/error behavior without Mongo fallback, explicit deferred document/billing routes, bounded JSON/form bodies, real PostgreSQL outage and real Redis outage handling. Independent limiter and server instances share both requested-MID and network-source budgets; raw identities do not appear in Redis keys. Public scan exposes only the emergency-card allowlist.
+
+Final NaN hardening was confined to the new unpublished migration. Native patient/server tests and affected infrastructure/provider deployment/readiness suites were rerun successfully afterward. Existing reviewed migrations and Prisma models remain unchanged. The frontend's 41 tests cover 18 new patient checks plus 23 auth/provider regressions across four suites; its production build passed with existing Browserslist/fs.F_OK warnings.
+
+Verification used synthetic disposable services and restricted runtime credentials. No production services/data, real SMTP delivery, load testing, deployment, cutover or full historical backfill was exercised. No dependencies or package lockfiles changed; the existing vulnerability findings were not remediated or newly audited by this phase. Phase 2.5 appointment/materialization/booking/holds/scheduler, Phase 2.6 clinical/document/EHR and Phase 2.8 billing remain deferred. See backend/prisma/PATIENTS.md and ADR-019.
 
 ## Phase 2.3 group-clinic external review correction — 2026-10-28
 
-Phase 2.3 — IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. All required correction checks passed; external review is pending. Phase 2.4 is NOT STARTED.
+Phase 2.3 is COMPLETE and externally reviewed at 908cb967afd9162e3a9be78d71cd13c477be4ffe. The correction verification below is retained as historical evidence; current Phase 2.4 work is recorded above.
 
 The targeted correction starts from clean main and origin/main at b1548d87bb9c6b81da728bdd702a9895c2de6e99. It adds only the group-practice membership and recurring-template authorization missing from ADR-013/ADR-014; the initial Phase 2.3 implementation is not repeated.
 

@@ -242,14 +242,22 @@ export const authAPI = {
 
 // Patient
 export const patientAPI = {
+  getConfig: () => api.get('/patients/config'),
   getProfile: () => api.get('/patients/profile'),
   updateProfile: (data) => api.put('/patients/profile', data),
   getQR: () => api.get('/patients/qr'),
   addDocument: (data) => api.post('/patients/documents', data),
   deleteDocument: (id) => api.delete(`/patients/documents/${id}`),
   // Unified medical benefits (govt + employer + personal)
+  getMedicalBenefits: () => api.get('/patients/medical-benefits'),
   addMedicalBenefit: (data) => api.post('/patients/medical-benefits', data),
+  updateMedicalBenefit: (id, data) => api.put(`/patients/medical-benefits/${id}`, data),
   deleteMedicalBenefit: (id) => api.delete(`/patients/medical-benefits/${id}`),
+  getTrustedProviders: () => api.get('/patients/trusted-providers'),
+  trustDoctor: id => api.post(`/patients/trusted-doctors/${id}`),
+  removeTrustedDoctor: id => api.delete(`/patients/trusted-doctors/${id}`),
+  trustHospital: id => api.post(`/patients/trusted-hospitals/${id}`),
+  removeTrustedHospital: id => api.delete(`/patients/trusted-hospitals/${id}`),
   // Legacy
   addGovernmentBenefit: (data) => api.post('/patients/government-benefits', data),
   scanUID: (uid) => api.get(`/patients/scan/${uid}`),

@@ -1,6 +1,6 @@
 # PostgreSQL infrastructure development
 
-MongoDB remains the operational business database. Authentication is explicitly selected with AUTH_BACKEND=legacy|postgres; providers additionally require ORGANIZATION_BACKEND=legacy|postgres, with postgres requiring PostgreSQL authentication; there is no automatic cutover or fallback. PostgreSQL authentication reuses one bounded Prisma lifecycle and adds no business dual writes. See [AUTH_HARDENING.md](AUTH_HARDENING.md) for configuration, nine-migration setup, credentials, cookies and manual synthetic identity reconciliation. See ORGANIZATIONS.md for the Phase 2.3 provider repositories, API contracts and clinic ownership. Python/FastAPI remains reserved for the separate AI service.
+MongoDB remains the operational business database. Authentication is explicitly selected with AUTH_BACKEND=legacy|postgres; providers additionally require ORGANIZATION_BACKEND=legacy|postgres, with postgres requiring PostgreSQL authentication; there is no automatic cutover or fallback. PostgreSQL authentication reuses one bounded Prisma lifecycle and adds no business dual writes. See [AUTH_HARDENING.md](AUTH_HARDENING.md) for configuration, ten-migration setup, credentials, cookies and manual synthetic identity reconciliation. See ORGANIZATIONS.md for the Phase 2.3 provider repositories, API contracts and clinic ownership. PATIENT_BACKEND explicitly selects legacy or postgres; PostgreSQL patients require both PostgreSQL auth and providers. See PATIENTS.md for demographics, emergency-card, benefit and trusted-preference contracts. Python/FastAPI remains reserved for the separate AI service.
 
 ## Fresh backend setup
 
@@ -37,8 +37,9 @@ The migration wrapper accepts only the named migration role, captures raw Prisma
 7. 202610240002_phase22b_provisioning
 8. 202610250001_phase23_provider_hierarchy
 9. 202610280001_phase23_group_clinic_membership
+10. 202610280002_phase24_patient_demographics_benefits
 
-All eight previously pushed migrations remain unchanged. The fourth grants infrastructure metadata access only; the fifth adds Phase 2.2A authentication/ownership reads. The sixth adds versioned sessions and minimal patient registration; the seventh adds audited, hospital-scoped provisioning through restricted functions. The eighth establishes distinct private-clinic ownership and provider operations. The ninth adds owner-scoped group-clinic membership operations and authorizes each explicit clinic member's own recurring availability. Runtime cannot create schema objects, mutate migration history or access clinical tables. Diagnostics retains metadata-only access. See AUTH_HARDENING.md for current grants, identity reconciliation and authentication settings.
+All nine previously pushed migrations remain unchanged. The fourth grants infrastructure metadata access only; the fifth adds Phase 2.2A authentication/ownership reads. The sixth adds versioned sessions and minimal patient registration; the seventh adds audited, hospital-scoped provisioning through restricted functions. The eighth establishes distinct private-clinic ownership and provider operations. The ninth adds owner-scoped group-clinic membership operations and authorizes each explicit clinic member's own recurring availability. The tenth adds actor-scoped patient demographics/benefits/preferences and the narrow public emergency-card function, with no schema-model redesign or clinical/billing grants. Its NOT VALID benefit checks protect new/updated rows while preserving historical rows for explicit reconciliation. Runtime cannot create schema objects, mutate migration history or access clinical tables. Diagnostics retains metadata-only access. See AUTH_HARDENING.md for current grants, identity reconciliation and authentication settings.
 
 ## Lifecycle, readiness and pooling
 
@@ -61,7 +62,7 @@ On Windows with PostgreSQL 18 server headers and Visual Studio C++ Build Tools, 
     npm run check:js
     npm run test:legacy
 
-The exact gate executes all three original migration files unchanged, verifies both extensions and a real vector operator, then runs 27 schema and 70 review checks on native PostgreSQL. The concurrency suite now requires real pgvector and never removes SQL. The infrastructure suite uses Prisma to deploy all nine migrations with non-superuser migration credentials and tests real role permissions, pooling, missing/drifted migrations, connection/auth failures and client/process shutdown. Pure identifier/configuration tests are separate. Production TLS chains, managed poolers, production load and production deployment remain outside this local verification.
+The exact gate executes all three original migration files unchanged, verifies both extensions and a real vector operator, then runs 27 schema and 70 review checks on native PostgreSQL. The concurrency suite now requires real pgvector and never removes SQL. The infrastructure suite uses Prisma to deploy all ten migrations with non-superuser migration credentials and tests real role permissions, pooling, missing/drifted migrations, connection/auth failures and client/process shutdown. Pure identifier/configuration tests are separate. Production TLS chains, managed poolers, production load and production deployment remain outside this local verification.
 
 ## Ownership and remaining security work
 

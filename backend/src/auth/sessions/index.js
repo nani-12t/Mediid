@@ -1,6 +1,7 @@
 'use strict';
 const {randomBytes,createHash}=require('node:crypto');
 const {newPostgresId}=require('../../identifiers/uuid');
+const {generatePatientUID}=require('../../../utils/idGenerator');
 const {IdentityRepository}=require('../repositories/identity');
 const {Authentication}=require('../services/authentication');
 const {loginIdentity,canonicalEmail}=require('../identity');
@@ -45,15 +46,16 @@ class Sessions {
   if(!input||Object.keys(input).some(k=>!['email','password','role','firstName','lastName','phone','refresh'].includes(k))||input.role&&input.role!=='patient')throw new AuthError('AUTH_INPUT');
   const email=canonicalEmail(input.email),hash=await this.passwords.hash(input.password);
   const firstName=typeof input.firstName==='string'?input.firstName.trim():'',lastName=typeof input.lastName==='string'?input.lastName.trim():'';
-  if(!firstName||!lastName||firstName.length>100||lastName.length>100)throw new AuthError('AUTH_INPUT');
-  if(input.phone!==undefined&&(typeof input.phone!=='string'||input.phone.length>32||/[\x00-\x1f]/.test(input.phone)))throw new AuthError('AUTH_INPUT');
-  const id=newPostgresId(),patientId=newPostgresId(),uid='MID-'+randomBytes(4).toString('hex').toUpperCase();
+  if(!firstName||!lastName||firstName.length>100||lastName.length>100||/[\x00-\x1f\x7f]/.test(firstName+lastName))throw new AuthError('AUTH_INPUT');
+  if(input.phone!==undefined&&(typeof input.phone!=='string'||input.phone.length>32||/[\x00-\x1f\x7f]/.test(input.phone)))throw new AuthError('AUTH_INPUT');
+  const id=newPostgresId(),patientId=newPostgresId(),uid=generatePatientUID();
   const profile={_id:patientId,uid,firstName,lastName,...(input.phone?{phone:input.phone}:{}),qrCode:JSON.stringify({type:'mediid_patient',uid,verifyUrl:this.clientUrl+'/verify/'+uid})};
   let result;
   try{result=await this.db.$transaction(async tx=>{
    await tx.$executeRaw`INSERT INTO public.users(id,email,uid,password_hash,role,updated_at) VALUES(${id}::uuid,${email},${uid},${hash},'patient',now())`;
    await tx.$executeRaw`INSERT INTO public.patients(id,user_id,uid,first_name,last_name,updated_at) VALUES(${patientId}::uuid,${id}::uuid,${uid},${firstName},${lastName},now())`;
    await tx.$executeRaw`INSERT INTO public.auth_profiles(user_id,profile_kind,public_uid,safe_profile) VALUES(${id}::uuid,'patient',${uid},${JSON.stringify(profile)}::jsonb)`;
+   if(input.phone!==undefined)await tx.$queryRaw`SELECT public.mediid_update_patient_profile(${id}::uuid,${JSON.stringify({phone:input.phone})}::jsonb)`;
    const user=await this.lockUser(tx,id);return {...await this.create(tx,user),current:user};
   });}catch(error){if(error?.meta?.code==='23505'||error?.code==='P2002')throw new AuthError('AUTH_CONFLICT');throw error;}
   return {...result,...await this.metadata(result.current),current:undefined};

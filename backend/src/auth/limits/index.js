@@ -28,8 +28,8 @@ class AuthLimits {
  constructor(config){this.config=config;this.redis=new Redis(config.url,{lazyConnect:true,enableOfflineQueue:false,maxRetriesPerRequest:0,retryStrategy:()=>null,connectTimeout:3000,commandTimeout:3000});this.redis.on('error',()=>{});}
  async start(){try{await this.redis.connect();await this.redis.ping();}catch{throw new AuthError('AUTH_UNAVAILABLE');}}
  key(operation,dimension,value){return 'mediid:auth:'+operation+':'+dimension+':'+createHmac('sha256',this.config.secret).update(String(value)).digest('hex');}
- async consume(operation,source,identity){
-  const rule=this.config.policies[operation];if(!rule)throw new AuthError('AUTH_CONFIG');
+ async consume(operation,source,identity,rule=this.config.policies[operation]){
+  if(!rule)throw new AuthError('AUTH_CONFIG');
   const normalized=typeof identity==='string'?identity.trim().toLowerCase().slice(0,1024):'invalid';
   const keys=[this.key(operation,'source',source),this.key(operation,'identity',normalized)];
   let result;try{result=await this.redis.eval(SCRIPT,2,...keys,rule.windowMs,rule.sourceMax,rule.identityMax);}catch{throw new AuthError('AUTH_UNAVAILABLE');}

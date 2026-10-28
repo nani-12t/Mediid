@@ -422,7 +422,7 @@ The authoritative SQL/deadline contract is backend/prisma/SQL_CONSTRAINTS.md. Di
 
 ## ADR-018: Distinct Doctor-Owned Clinic Organizations and Phase 2.3 Provider Boundary
 
-**Status:** Implemented for Phase 2.3; pending external review.
+**Status:** COMPLETE; externally reviewed including group-clinic correction at 908cb967afd9162e3a9be78d71cd13c477be4ffe.
 **Date:** 2026-10-25; group-practice clarification 2026-10-28
 
 ADR-013 supports individual or group private practices as Hospital(type=clinic) records; ADR-014 reserves each practitioner's private-clinic scheduling to that practitioner. The historical required Hospital.userId relation represented a hospital-admin owner and could not express a private doctor without conflating roles.
@@ -440,3 +440,22 @@ Explicit DoctorHospitalMembership remains authoritative. primaryHospitalId is co
 ORGANIZATION_BACKEND selects legacy or postgres explicitly. PostgreSQL provider management requires the reviewed PostgreSQL session boundary and reuses the existing infrastructure lifecycle. No fallback or production cutover is introduced. Provider availability CRUD uses RecurringAvailabilityTemplate only; booking/materialization/capacity remains Phase 2.5. Unmigrated clinical and business routes stay closed.
 
 All Node backend implementation remains JavaScript/CommonJS under the externally reviewed standardization; historical TypeScript examples and ADR-010 do not govern current implementation. See backend/prisma/ORGANIZATIONS.md for APIs, DTOs, credentials and phase limits.
+
+## ADR-019: Patient Demographics, Emergency Identity and Trusted Preferences
+
+**Status:** Implemented and tested for Phase 2.4; pending external review.
+**Date:** 2026-10-28
+
+Patient demographics, emergency identity and benefits use the existing Patient, PatientBenefit, PatientTrustedDoctor and PatientTrustedHospital models. The explicit PATIENT_BACKEND=postgres option requires reviewed PostgreSQL auth and organization modes; no silent Mongo fallback or production cutover is introduced. All implementation remains JavaScript/CommonJS.
+
+Demographic emergency fields are blood group, emergency contact and organ-donor preference. Allergies, conditions, medications, clinical history, notes and medical documents belong to the later longitudinal clinical domain. Phase 2.4 rejects those mutations and returns safe empty compatibility arrays where needed, without adding arbitrary JSON storage or querying clinical/billing tables. Document and billing routes remain explicitly unmigrated. This phase implements no Phase 2.5 scheduling/materialization or Phase 2.8 billing.
+
+Trusted provider != clinical consent. A patient-owned doctor/hospital preference grants no EHR, encounter, document, clinical or billing access. It changes no clinic ownership/membership, calendar authority, role or existing consent architecture. Later clinical access still requires its separately reviewed context, Consent, AccessGrant or break-glass authorization.
+
+Aadhaar input is accepted only as an optional valid 12-digit identifier and immediately converted to a domain-separated HMAC-SHA-256 digest using a strong server-side secret. Only the digest persists; neither plaintext nor digest is returned or copied into auth presentation, QR payloads, Redis keys, emergency cards, audit messages or logs. aadhaarPresent means an identifier is on file, not government verification. Explicit null is the clearing operation.
+
+Public emergency scan accepts only canonical public MID values, requires an active linked patient identity and qrActive=true, and returns only UID, name, blood group, emergency-contact fields and organ-donor state. Distributed Redis HMAC source/identity limits fail unavailable on Redis errors. QR payloads contain public identity and routing only; patient images are generated rather than stored as large database values.
+
+Protected SQL functions recheck current active patient role, ownership and matching User/Patient UID. User-first locking and merge-after-lock partial updates preserve unrelated concurrent fields; auth_profiles.safe_profile is rebuilt transactionally from only safe identity, names and phone. Benefits retain exact PostgreSQL Decimal values and use owner-scoped soft deletion. New integrity checks are forward-only and NOT VALID for deployment compatibility with historical imports, while still enforcing new/changed rows. Runtime receives narrow EXECUTE permissions and no new broad private/clinical/billing/research table access.
+
+See backend/prisma/PATIENTS.md for the API, configuration, identifier mapping, HMAC and deferred-domain contracts.

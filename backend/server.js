@@ -10,6 +10,8 @@ const app = express();
 let marketplaceConnection;
 let authRuntime;
 let organizationRuntime;
+let patientRuntime;
+const {createPatientRuntime}=require('./src/patients/runtime');
 const {createOrganizationRuntime}=require('./src/organizations/runtime');
 const {startAuthRuntime}=require('./src/auth/runtime');
 async function startServer() {
@@ -18,6 +20,7 @@ async function startServer() {
   await marketplaceConnection.asPromise();
   authRuntime=await startAuthRuntime();
   organizationRuntime=createOrganizationRuntime(authRuntime);
+  patientRuntime=createPatientRuntime(authRuntime,organizationRuntime);
 
 
   // Robust CORS configuration for Vercel/Production
@@ -79,6 +82,12 @@ async function startServer() {
       express.urlencoded({extended:false,limit:'256kb',parameterLimit:100}),
       (error,req,res,next)=>res.status(error?.type==='entity.too.large'?413:400).json({message:'Invalid provider request.'}));
   }
+  if (patientRuntime.mode === 'postgres') {
+    app.use('/api/patients',express.json({limit:'256kb'}),
+      express.urlencoded({extended:false,limit:'256kb',parameterLimit:100}),
+      (error,req,res,next)=>res.status(error?.type==='entity.too.large'||error?.type==='parameters.too.many'?413:400)
+        .set('Cache-Control','no-store').json({code:'PATIENT_INPUT',message:'Invalid patient request.'}));
+  }
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -89,7 +98,12 @@ async function startServer() {
     app.get('/api/auth/config', (req,res) => res.json({backend:'legacy'}));
     app.use('/api/auth', require('./routes/auth'));
   }
-  app.use('/api/patients', require('./routes/patients'));
+  app.get('/api/patients/config',(req,res)=>res.set('Cache-Control','no-store').json({backend:patientRuntime.mode}));
+  if (patientRuntime.mode === 'postgres') {
+    app.use('/api/patients',require('./src/patients/http').createPatientRouter(authRuntime,patientRuntime.service));
+  } else {
+    app.use('/api/patients',require('./routes/patients'));
+  }
   app.get('/api/organizations/config',(req,res)=>res.set('Cache-Control','no-store').json({backend:organizationRuntime.mode}));
   if (organizationRuntime.mode === 'postgres') {
     app.use('/api',require('./src/organizations/http').createOrganizationRouter(authRuntime,organizationRuntime.service));

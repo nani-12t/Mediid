@@ -22,6 +22,13 @@ const EMPLOYER_BENEFIT_TYPES = [
   { value: 'other_employer',      label: 'Other Employer Benefit' },
 ];
 
+const PERSONAL_BENEFIT_TYPES = [
+  { value: 'individual_insurance', label: 'Individual Health Insurance' },
+  { value: 'family_floater', label: 'Family Floater' },
+  { value: 'top_up', label: 'Top-up Insurance' },
+  { value: 'other_personal', label: 'Other Personal Insurance' },
+];
+
 const SOURCE_CONFIG = {
   government: {
     label: 'Government Scheme',
@@ -36,6 +43,11 @@ const SOURCE_CONFIG = {
     gradient: 'linear-gradient(135deg, #7c3aed 0%, #db2777 100%)',
     badge: 'badge-purple',
     types: EMPLOYER_BENEFIT_TYPES,
+  },
+  personal: {
+    label: 'Personal Insurance', icon: '🛡️',
+    gradient: 'linear-gradient(135deg, #0d9488 0%, #0369a1 100%)',
+    badge: 'badge-teal', types: PERSONAL_BENEFIT_TYPES,
   },
 };
 
@@ -69,11 +81,9 @@ const EMPTY_DOC = {
 };
 
 /* ─── BenefitCard component ─── */
-function BenefitCard({ benefit: b, onDelete }) {
-  const isGovt = b.source === 'government';
-  const gradient = isGovt
-    ? 'linear-gradient(135deg, #1d4ed8 0%, #0d9488 100%)'
-    : 'linear-gradient(135deg, #7c3aed 0%, #db2777 100%)';
+function BenefitCard({ benefit: b, onDelete, disabled }) {
+  const source = SOURCE_CONFIG[b.source];
+  const gradient = source?.gradient || SOURCE_CONFIG.personal.gradient;
 
   const isExpired = b.validUntil && new Date(b.validUntil) < new Date();
   const expiresSoon = b.validUntil && !isExpired &&
@@ -85,9 +95,9 @@ function BenefitCard({ benefit: b, onDelete }) {
       <div style={{ background: gradient, padding: '16px 18px 14px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            {isGovt ? '🏛️ Government' : '🏢 Employer'} · {b.type?.replace(/_/g, ' ')}
+            {source?.icon} {source?.label || 'Medical Benefit'} · {b.type?.replace(/_/g, ' ')}
           </span>
-          <button onClick={() => onDelete(b._id)}
+          <button aria-label={`Remove ${b.schemeName}`} disabled={disabled} onClick={() => onDelete(b._id)}
             style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '3px 6px', cursor: 'pointer', color: '#fff', lineHeight: 1 }}>
             ✕
           </button>
@@ -156,10 +166,14 @@ function BenefitCard({ benefit: b, onDelete }) {
 }
 
 export default function PatientProfile() {
-  const { profile, setProfile } = useAuth();
+  const { profile } = useAuth();
+  const [backend, setBackend] = useState(null);
+  const [backendError, setBackendError] = useState(false);
+  const isPostgres = backend === 'postgres';
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState(searchParams.get('tab') || 'emergency');
   const [patient, setPatient] = useState(null);
+  const canMutate = Boolean(backend && patient);
   const [saving, setSaving] = useState(false);
   const [showDocModal, setShowDocModal] = useState(false);
   const [showBenefitModal, setShowBenefitModal] = useState(false);
@@ -184,13 +198,17 @@ export default function PatientProfile() {
   });
   const [emergency, setEmergency] = useState({
     bloodGroup: '', allergies: '', chronicConditions: '', currentMedications: '',
-    emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: '', aadhaarNumber: '',
+    emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: '', aadhaarNumber: '', organDonor: false,
   });
 
   useEffect(() => {
     const load = async () => {
       try {
+        const config = await patientAPI.getConfig();
+        if (!['legacy', 'postgres'].includes(config.data?.backend)) throw new Error('Patient configuration unavailable');
+        const selectedBackend = config.data.backend;
         const { data } = await patientAPI.getProfile();
+        setBackend(selectedBackend);
         setPatient(data);
         setEmergency({
           bloodGroup: data.emergency?.bloodGroup || '',
@@ -200,20 +218,34 @@ export default function PatientProfile() {
           emergencyContactName: data.emergency?.emergencyContactName || '',
           emergencyContactPhone: data.emergency?.emergencyContactPhone || '',
           emergencyContactRelation: data.emergency?.emergencyContactRelation || '',
-          aadhaarNumber: data.emergency?.aadhaarNumber || '',
+          aadhaarNumber: selectedBackend === 'legacy' ? data.emergency?.aadhaarNumber || '' : '',
+          organDonor: data.emergency?.organDonor ?? data.organDonor ?? false,
         });
       } catch (e) {
-        console.warn('⚠️ No profile found for this user.');
-        setPatient({}); // Set to empty object to stop 'Loading...' state
+        setBackendError(true);
       }
     };
     load();
   }, []);
 
   const saveEmergency = async () => {
+    if (!canMutate) return;
+    if (isPostgres && emergency.aadhaarNumber && !/^\d{12}$/.test(emergency.aadhaarNumber)) {
+      toast.error('Enter a new 12-digit Aadhaar number or leave it blank.');
+      return;
+    }
     setSaving(true);
     try {
-      const payload = {
+      const payload = isPostgres ? {
+        emergency: {
+          bloodGroup: emergency.bloodGroup || null,
+          emergencyContactName: emergency.emergencyContactName,
+          emergencyContactPhone: emergency.emergencyContactPhone,
+          emergencyContactRelation: emergency.emergencyContactRelation,
+          organDonor: emergency.organDonor,
+          ...(emergency.aadhaarNumber ? { aadhaarNumber: emergency.aadhaarNumber } : {}),
+        },
+      } : {
         emergency: {
           ...emergency,
           allergies: emergency.allergies.split(',').map(s => s.trim()).filter(Boolean),
@@ -221,7 +253,11 @@ export default function PatientProfile() {
           currentMedications: emergency.currentMedications.split(',').map(s => s.trim()).filter(Boolean),
         },
       };
-      await patientAPI.updateProfile(payload);
+      const { data } = await patientAPI.updateProfile(payload);
+      setPatient(data);
+      if (isPostgres) {
+        setEmergency(previous => ({ ...previous, aadhaarNumber: '' }));
+      }
       toast.success('Emergency info updated!');
     } catch { toast.error('Update failed'); }
     setSaving(false);
@@ -261,7 +297,7 @@ export default function PatientProfile() {
 
   /* ── document submit ── */
   const addDocument = async () => {
-    if (!docForm.title.trim()) return;
+    if (!canMutate || isPostgres || !docForm.title.trim()) return;
     setDocUploading(true);
     try {
       let fileUrl = docForm.fileUrl.trim();
@@ -297,13 +333,13 @@ export default function PatientProfile() {
       closeDocModal();
       toast.success('Document added to DigiLocker!');
     } catch (err) {
-      console.error(err);
       toast.error('Failed to add document');
     }
     setDocUploading(false);
   };
 
   const deleteDocument = async (id) => {
+    if (!canMutate || isPostgres) return;
     if (!window.confirm('Delete this document?')) return;
     try {
       await patientAPI.deleteDocument(id);
@@ -313,8 +349,33 @@ export default function PatientProfile() {
   };
 
   const addBenefit = async () => {
+    if (!canMutate) return;
+    const fields = {
+      ...benefitForm, source: benefitSource,
+      familyMembers: benefitForm.familyMembers
+        ? benefitForm.familyMembers.split(',').map(s => s.trim()).filter(Boolean) : [],
+    };
+    if (isPostgres) {
+      for (const [field, integerDigits] of [['coverageAmount', 10], ['roomRentLimit', 8]]) {
+        const value = benefitForm[field].trim();
+        if (!value) delete fields[field];
+        else if (!new RegExp('^\\d{1,' + integerDigits + '}(?:\\.\\d{1,2})?$').test(value)) {
+          toast.error('Enter a non-negative amount with at most two decimal places.');
+          return;
+        } else fields[field] = value;
+      }
+      for (const field of ['validFrom', 'validUntil']) if (!fields[field]) delete fields[field];
+      if (fields.validFrom && fields.validUntil && fields.validUntil < fields.validFrom) {
+        toast.error('The end date must be on or after the start date.');
+        return;
+      }
+      if (fields.familyMembers.length > 50 || fields.familyMembers.some(member => member.length > 100)) {
+        toast.error('Family coverage supports up to 50 names of 100 characters each.');
+        return;
+      }
+    }
     try {
-      await patientAPI.addMedicalBenefit({
+      await patientAPI.addMedicalBenefit(isPostgres ? fields : {
         ...benefitForm,
         source: benefitSource,
         coverageAmount: benefitForm.coverageAmount ? Number(benefitForm.coverageAmount) : undefined,
@@ -326,6 +387,7 @@ export default function PatientProfile() {
       const { data } = await patientAPI.getProfile();
       setPatient(data);
       setShowBenefitModal(false);
+      setBenefitSource('government');
       setBenefitForm({
         source: 'government', type: 'ayushman',
         schemeName: '', cardNumber: '', policyNumber: '',
@@ -342,6 +404,7 @@ export default function PatientProfile() {
   };
 
   const deleteBenefit = async (id) => {
+    if (!canMutate) return;
     if (!window.confirm('Remove this benefit?')) return;
     try {
       await patientAPI.deleteMedicalBenefit(id);
@@ -391,45 +454,50 @@ export default function PatientProfile() {
           {profile ? `${profile.firstName} ${profile.lastName}` : 'Loading...'}
         </h2>
         <p style={{ color: 'var(--gray-500)', fontSize: 16 }}>
-          Manage your medical information, documents, and government benefits
+          Manage your emergency information and medical benefits
         </p>
       </div>
+
+      {backendError && <p role="alert">Patient information is unavailable. Changes are disabled until it can be loaded safely.</p>}
+      {!backend && !backendError && <p role="status">Loading patient information...</p>}
 
       <div className="tabs">
         <TabButton label="🚨 Emergency Info" active={tab === 'emergency'} onClick={() => setTab('emergency')} />
         <TabButton label="📄 Documents"       active={tab === 'documents'} onClick={() => setTab('documents')} />
-        <TabButton label="🏛️ Govt. Benefits"  active={tab === 'benefits'}  onClick={() => setTab('benefits')} />
+        <TabButton label="🏛️ Medical Benefits"  active={tab === 'benefits'}  onClick={() => setTab('benefits')} />
       </div>
 
       {/* ═══════ Emergency Info ═══════ */}
       {tab === 'emergency' && (
         <div className="card">
-          {!emergency.aadhaarNumber && (
+          {!(patient?.aadhaarPresent || patient?.emergency?.aadhaarPresent || (backend === 'legacy' && patient?.emergency?.aadhaarNumber)) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #3b82f6' }}>
               <Shield size={18} color="#1d4ed8" style={{ flexShrink: 0, marginTop: 1 }} />
               <div>
                 <p style={{ fontSize: 14, color: '#1e40af', fontWeight: 500, marginBottom: 4 }}>Add Your Aadhaar Number</p>
                 <p style={{ fontSize: 13, color: '#1e40af', lineHeight: 1.4 }}>
-                  Provide your Aadhaar number to automatically check eligibility for government health schemes like Ayushman Bharat, ESI, CGHS, and state health programs.
+                  Adding an Aadhaar identifier does not verify your identity or check government scheme eligibility.
                 </p>
               </div>
             </div>
           )}
-          {emergency.aadhaarNumber && emergency.aadhaarNumber.length === 12 && (
+          {(patient?.aadhaarPresent || patient?.emergency?.aadhaarPresent || (backend === 'legacy' && patient?.emergency?.aadhaarNumber)) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 14px', background: '#ecfdf5', borderRadius: 8, border: '1px solid #10b981' }}>
               <Shield size={18} color="#059669" style={{ flexShrink: 0, marginTop: 1 }} />
               <div>
-                <p style={{ fontSize: 14, color: '#047857', fontWeight: 500, marginBottom: 4 }}>Aadhaar Verified</p>
+                <p style={{ fontSize: 14, color: '#047857', fontWeight: 500, marginBottom: 4 }}>Aadhaar identifier on file</p>
                 <p style={{ fontSize: 13, color: '#047857', lineHeight: 1.4 }}>
-                  Your Aadhaar number has been saved. You can now add government benefit cards in the "Govt. Benefits" tab.
+                  An identifier is on file. Enter a new 12-digit value only to replace it. No government verification has been performed.
                 </p>
               </div>
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 14px', background: '#fff1f2', borderRadius: 8, border: '1px solid #fecdd3' }}>
             <AlertCircle size={16} color="#e11d48" />
-            <p style={{ fontSize: 13, color: '#9f1239' }}>This info is always visible when your QR is scanned — even in emergencies without your consent.</p>
+            <p style={{ fontSize: 13, color: '#9f1239' }}>{isPostgres ? 'Your active emergency QR card shares your name, blood group, emergency contact and organ-donor choice. Aadhaar and benefit details are not included.' : 'Your emergency information is visible when your QR is scanned. Review the information you choose to provide.'}</p>
           </div>
+          {isPostgres && <p role="note" style={{ marginBottom: 16 }}>Allergies, chronic conditions and medications belong to the future longitudinal clinical record and cannot be saved here yet.</p>}
+          <fieldset disabled={!canMutate} style={{ border: 0, padding: 0, margin: 0 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="form-group">
               <label className="form-label">Blood Group</label>
@@ -444,19 +512,19 @@ export default function PatientProfile() {
                 value={emergency.aadhaarNumber}
                 onChange={e => setEmergency({ ...emergency, aadhaarNumber: e.target.value.replace(/\D/g, '').slice(0, 12) })}
                 maxLength="12" />
-              <small style={{ color: 'var(--gray-500)', fontSize: 12, marginTop: 4, display: 'block' }}>Enter 12-digit Aadhaar number</small>
+              <small style={{ color: 'var(--gray-500)', fontSize: 12, marginTop: 4, display: 'block' }}>{isPostgres ? 'Leave blank to keep the stored identifier; enter 12 digits to replace it.' : 'Enter a 12-digit Aadhaar number. This does not verify it.'}</small>
             </div>
             <div className="form-group">
               <label className="form-label">Allergies (comma separated)</label>
-              <input className="form-input" placeholder="Penicillin, Peanuts, Latex" value={emergency.allergies} onChange={e => setEmergency({ ...emergency, allergies: e.target.value })} />
+              <input className="form-input" disabled={isPostgres} placeholder="Penicillin, Peanuts, Latex" value={emergency.allergies} onChange={e => setEmergency({ ...emergency, allergies: e.target.value })} />
             </div>
             <div className="form-group">
               <label className="form-label">Chronic Conditions</label>
-              <input className="form-input" placeholder="Diabetes Type 2, Hypertension" value={emergency.chronicConditions} onChange={e => setEmergency({ ...emergency, chronicConditions: e.target.value })} />
+              <input className="form-input" disabled={isPostgres} placeholder="Diabetes Type 2, Hypertension" value={emergency.chronicConditions} onChange={e => setEmergency({ ...emergency, chronicConditions: e.target.value })} />
             </div>
             <div className="form-group">
               <label className="form-label">Current Medications</label>
-              <input className="form-input" placeholder="Metformin 500mg, Amlodipine 5mg" value={emergency.currentMedications} onChange={e => setEmergency({ ...emergency, currentMedications: e.target.value })} />
+              <input className="form-input" disabled={isPostgres} placeholder="Metformin 500mg, Amlodipine 5mg" value={emergency.currentMedications} onChange={e => setEmergency({ ...emergency, currentMedications: e.target.value })} />
             </div>
             <div className="form-group">
               <label className="form-label">Emergency Contact Name</label>
@@ -466,14 +534,25 @@ export default function PatientProfile() {
               <label className="form-label">Emergency Contact Phone</label>
               <input className="form-input" type="tel" placeholder="+91 98765 43210" value={emergency.emergencyContactPhone} onChange={e => setEmergency({ ...emergency, emergencyContactPhone: e.target.value })} />
             </div>
+            <div className="form-group">
+              <label className="form-label">Emergency Contact Relationship</label>
+              <input className="form-input" placeholder="Parent, spouse, friend" value={emergency.emergencyContactRelation}
+                onChange={e => setEmergency({ ...emergency, emergencyContactRelation: e.target.value })} />
+            </div>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={emergency.organDonor}
+                onChange={e => setEmergency({ ...emergency, organDonor: e.target.checked })} /> Organ donor
+            </label>
           </div>
-          <button className="btn btn-primary" onClick={saveEmergency} disabled={saving}>{saving ? 'Saving...' : '💾 Save Emergency Info'}</button>
+          </fieldset>
+          <button className="btn btn-primary" onClick={saveEmergency} disabled={saving || !canMutate}>{saving ? 'Saving...' : '💾 Save Emergency Info'}</button>
         </div>
       )}
 
       {/* ═══════ Documents ═══════ */}
       {tab === 'documents' && (
         <div>
+          {isPostgres && <p role="note" className="card">Medical document uploads and deletion will be available in the future clinical record phase. They cannot be saved here yet.</p>}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
               <button
@@ -494,7 +573,7 @@ export default function PatientProfile() {
                 </button>
               ))}
             </div>
-            <button className="btn btn-primary" onClick={() => setShowDocModal(true)} style={{ flexShrink: 0 }}>
+            <button className="btn btn-primary" disabled={!canMutate || isPostgres} onClick={() => setShowDocModal(true)} style={{ flexShrink: 0 }}>
               <Plus size={16} /> Upload Document
             </button>
           </div>
@@ -502,8 +581,8 @@ export default function PatientProfile() {
           {(!patient?.documents || patient.documents.length === 0) ? (
             <div className="card empty-state" style={{ textAlign: 'center', padding: '48px 24px' }}>
               <FileText size={48} style={{ margin: '0 auto 14px', opacity: 0.2 }} />
-              <p style={{ fontSize: 15, color: 'var(--gray-400)', marginBottom: 16 }}>No documents yet. Upload your medical records.</p>
-              <button className="btn btn-primary" onClick={() => setShowDocModal(true)}>
+              <p style={{ fontSize: 15, color: 'var(--gray-400)', marginBottom: 16 }}>{isPostgres ? 'Document storage is deferred.' : 'No documents yet. Upload your medical records.'}</p>
+              <button className="btn btn-primary" disabled={!canMutate || isPostgres} onClick={() => setShowDocModal(true)}>
                 <Plus size={15} /> Upload your first document
               </button>
             </div>
@@ -543,7 +622,7 @@ export default function PatientProfile() {
                         {new Date(doc.uploadedAt).toLocaleDateString('en-IN')}
                       </p>
                     </div>
-                    <button onClick={() => deleteDocument(doc._id)}
+                    <button disabled={!canMutate || isPostgres} onClick={() => deleteDocument(doc._id)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-300)', flexShrink: 0 }}>
                       <Trash2 size={16} />
                     </button>
@@ -563,12 +642,12 @@ export default function PatientProfile() {
           <div style={{ background: '#eff6ff', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <Shield size={18} color="#1d4ed8" style={{ flexShrink: 0, marginTop: 1 }} />
             <p style={{ fontSize: 13, color: '#1e40af', lineHeight: 1.5 }}>
-              Add all your medical benefits — government health schemes (Ayushman Bharat, ESI, CGHS) <strong>and</strong> employer / company health insurance. These are shown to hospitals for cashless treatment.
+              Record government schemes, employer cover and personal insurance for your own reference. Adding a benefit does not check eligibility or grant providers access.
             </p>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-            <button className="btn btn-primary" onClick={() => setShowBenefitModal(true)}>
+            <button className="btn btn-primary" disabled={!canMutate} onClick={() => setShowBenefitModal(true)}>
               <Plus size={16} /> Add Medical Benefit
             </button>
           </div>
@@ -590,7 +669,7 @@ export default function PatientProfile() {
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
                     {govtBenefits.map(b => (
-                      <BenefitCard key={b._id} benefit={b} onDelete={deleteBenefit} />
+                      <BenefitCard key={b._id} benefit={b} onDelete={deleteBenefit} disabled={!canMutate} />
                     ))}
                   </div>
                 )}
@@ -615,20 +694,29 @@ export default function PatientProfile() {
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
                     {empBenefits.map(b => (
-                      <BenefitCard key={b._id} benefit={b} onDelete={deleteBenefit} />
+                      <BenefitCard key={b._id} benefit={b} onDelete={deleteBenefit} disabled={!canMutate} />
                     ))}
                   </div>
                 )}
               </div>
             );
           })()}
+          <div>
+            <h3 style={{ fontSize: 15, marginBottom: 12 }}>Personal Insurance</h3>
+            {(patient?.medicalBenefits || []).filter(b => b.source === 'personal').length === 0
+              ? <p style={{ fontSize: 13, color: 'var(--gray-400)' }}>No personal insurance added.</p>
+              : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+                {(patient?.medicalBenefits || []).filter(b => b.source === 'personal').map(b =>
+                  <BenefitCard key={b._id} benefit={b} onDelete={deleteBenefit} disabled={!canMutate} />)}
+              </div>}
+          </div>
         </div>
       )}
 
       {/* ═══════════════════════════════════════
           Document Upload Modal
       ═══════════════════════════════════════ */}
-      {showDocModal && (
+      {showDocModal && backend === 'legacy' && (
         <div style={modalOverlay} onClick={e => { if (e.target === e.currentTarget) closeDocModal(); }}>
           <div style={modalBox}>
 
@@ -771,7 +859,7 @@ export default function PatientProfile() {
             <div style={modalHeader}>
               <div>
                 <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', marginBottom: 3, letterSpacing: '-0.01em' }}>Add Medical Benefit</h2>
-                <p style={{ fontSize: 13, color: '#9ca3af' }}>Government scheme or employer / company health cover</p>
+                <p style={{ fontSize: 13, color: '#9ca3af' }}>Government, employer or personal health cover</p>
               </div>
               <button style={closeBtn} onClick={() => setShowBenefitModal(false)}>
                 <X size={15} /> Close
@@ -787,13 +875,14 @@ export default function PatientProfile() {
                   {[
                     { value: 'government', label: '🏛️ Government Scheme',   sub: 'Ayushman, ESI, CGHS, State' },
                     { value: 'employer',   label: '🏢 Employer / Company', sub: 'Group mediclaim, corporate cover' },
+                    { value: 'personal', label: '🛡️ Personal Insurance', sub: 'Individual, family floater, top-up' },
                   ].map(opt => (
                     <button key={opt.value} type="button"
                       onClick={() => {
                         setBenefitSource(opt.value);
                         setBenefitForm(f => ({
                           ...f, source: opt.value,
-                          type: opt.value === 'government' ? 'ayushman' : 'group_mediclaim',
+                          type: SOURCE_CONFIG[opt.value].types[0].value,
                         }));
                       }}
                       style={{ padding: '10px 12px', borderRadius: 10, border: `2px solid ${benefitSource === opt.value ? 'var(--teal)' : '#e5e7eb'}`, background: benefitSource === opt.value ? '#e6f7f5' : '#fff', textAlign: 'left', cursor: 'pointer' }}
@@ -819,9 +908,9 @@ export default function PatientProfile() {
 
               {/* ── Scheme / Plan name ── */}
               <div>
-                <label style={fLabel}>{benefitSource === 'employer' ? 'Insurance Plan Name' : 'Scheme Name'} <span style={{ color: '#e53e3e' }}>*</span></label>
+                <label style={fLabel}>{benefitSource !== 'government' ? 'Insurance Plan Name' : 'Scheme Name'} <span style={{ color: '#e53e3e' }}>*</span></label>
                 <input className="form-input" style={fInput}
-                  placeholder={benefitSource === 'employer' ? 'e.g. Star Health Group Mediclaim' : 'e.g. Ayushman Bharat PMJAY'}
+                  placeholder={benefitSource !== 'government' ? 'e.g. Star Health Group Mediclaim' : 'e.g. Ayushman Bharat PMJAY'}
                   value={benefitForm.schemeName}
                   onChange={e => setBenefitForm(f => ({ ...f, schemeName: e.target.value }))} />
               </div>
@@ -855,12 +944,12 @@ export default function PatientProfile() {
               {/* ── Card / Policy number + Beneficiary ── */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label style={fLabel}>{benefitSource === 'employer' ? 'Policy Number' : 'Card Number'}</label>
+                  <label style={fLabel}>{benefitSource !== 'government' ? 'Policy Number' : 'Card Number'}</label>
                   <input className="form-input" style={fInput} placeholder="Card / policy number"
-                    value={benefitSource === 'employer' ? benefitForm.policyNumber : benefitForm.cardNumber}
+                    value={benefitSource !== 'government' ? benefitForm.policyNumber : benefitForm.cardNumber}
                     onChange={e => setBenefitForm(f => ({
                       ...f,
-                      ...(benefitSource === 'employer' ? { policyNumber: e.target.value } : { cardNumber: e.target.value }),
+                      ...(benefitSource !== 'government' ? { policyNumber: e.target.value } : { cardNumber: e.target.value }),
                     }))} />
                 </div>
                 <div>
@@ -891,13 +980,13 @@ export default function PatientProfile() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={fLabel}>Sum Insured / Coverage (₹)</label>
-                  <input className="form-input" style={fInput} type="number" placeholder="e.g. 500000"
+                  <input className="form-input" style={fInput} type="number" min="0" step="0.01" max={isPostgres ? "9999999999.99" : undefined} placeholder="e.g. 500000"
                     value={benefitForm.coverageAmount}
                     onChange={e => setBenefitForm(f => ({ ...f, coverageAmount: e.target.value }))} />
                 </div>
                 <div>
                   <label style={fLabel}>Room Rent Limit (₹/day)</label>
-                  <input className="form-input" style={fInput} type="number" placeholder="e.g. 3000"
+                  <input className="form-input" style={fInput} type="number" min="0" step="0.01" max={isPostgres ? "99999999.99" : undefined} placeholder="e.g. 3000"
                     value={benefitForm.roomRentLimit}
                     onChange={e => setBenefitForm(f => ({ ...f, roomRentLimit: e.target.value }))} />
                 </div>
@@ -957,7 +1046,7 @@ export default function PatientProfile() {
                 style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #e5e7eb', background: '#fff', fontSize: 14, fontWeight: 500, color: '#374151', cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button onClick={addBenefit} disabled={!benefitForm.schemeName}
+              <button onClick={addBenefit} disabled={!canMutate || !benefitForm.schemeName.trim()}
                 style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: benefitForm.schemeName ? 'var(--teal)' : '#a7f3d0', fontSize: 14, fontWeight: 600, color: '#fff', cursor: benefitForm.schemeName ? 'pointer' : 'not-allowed' }}>
                 + Add Benefit
               </button>

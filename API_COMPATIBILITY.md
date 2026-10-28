@@ -209,3 +209,19 @@ export function toLegacyAppointmentDTO(
 ```
 
 This guarantees zero regressions across existing endpoints (`/api/appointments`, `/api/appointments/my`, `/api/appointments/hospital`, `/api/doctor-portal/queue`, `/api/doctor-portal/slots/available`).
+
+## Current Phase 2.4 patient compatibility (2026-10-28)
+
+The implemented patient mapper is JavaScript/CommonJS at backend/src/patients/dto/index.js. Historical TypeScript examples above describe the roadmap; no TypeScript backend or appointment implementation is introduced by Phase 2.4.
+
+PATIENT_BACKEND=legacy retains Mongo patient handlers. PATIENT_BACKEND=postgres requires AUTH_BACKEND=postgres and ORGANIZATION_BACKEND=postgres and selects only the patient demographics/emergency/benefit/preference APIs in backend/prisma/PATIENTS.md. GET /api/patients/config exposes only the selected backend. Errors and missing PostgreSQL records do not fall back to Mongo.
+
+GET /api/patients/profile preserves _id/id, internalId, uid, firstName/lastName, dateOfBirth, gender, phone, profilePhoto, nested address/emergency, medicalBenefits, governmentBenefits, insurancePolicies, trustedDoctors/trustedHospitals, qrActive and timestamps. A recorded imported Mongo patient ID is used only when its frozen-namespace UUIDv5 matches Patient.id; new profiles use stable UUID compatibility IDs while public MID stays separate. documents, bills and medicalHistory are empty deferred arrays, as are emergency allergies/chronicConditions/currentMedications.
+
+PUT profile accepts only explicit demographic fields. Aadhaar entry becomes an immediate keyed HMAC and is never echoed; aadhaarPresent drives storage wording, leaves the input blank and does not imply government verification. Clinical emergency controls and document controls are deferred in PostgreSQL mode rather than silently saved. Patient QR remains available to the dashboard with safe identity/routing-only payloads.
+
+medicalBenefits are canonical active PatientBenefit DTOs with stable UUID _id/id and exact decimal strings. DELETE deactivates. The government-benefits adapter maps only documented legacy aliases into the same rows and retains its array response. governmentBenefits and insurancePolicies are derived, with null/default values for fields not faithfully represented.
+
+Trusted-provider APIs return safe public Phase 2.3 summaries. Trusted provider != clinical consent. Public /api/patients/scan/:uid returns only UID/name and demographic emergency-card fields, requires qrActive and active linked patient identity, and uses distributed Redis rate limits. Private profile, benefits, contacts and relationship data remain owner-only.
+
+PostgreSQL document mutation, bills/payment and clinical-history routes return AUTH_DOMAIN_NOT_MIGRATED (503). Phase 2.5 appointments remain independently deferred; no compatibility claim here implements those routes.
