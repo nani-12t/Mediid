@@ -107,6 +107,29 @@ class Organizations {
     await databaseOperation(() => this.db.$queryRaw`SELECT public.mediid_update_hospital(${actor.id}::uuid,${row.id}::uuid,${newPostgresId()}::uuid,${JSON.stringify(payload)}::jsonb)`);
     return this.presentHospital(await this.requireHospital(row.id), true);
   }
+  async clinicScope(actor, id) {
+    await this.actor(actor, 'doctor');
+    const clinic = await this.requireHospital(id);
+    const doctors = await this.repository.doctors({userId:actor.id}, {limit:1});
+    if (clinic.type !== 'clinic' || doctors.length !== 1 || clinic.clinicOwnerDoctorId !== doctors[0].id) {
+      throw new OrganizationError('ORG_FORBIDDEN');
+    }
+    return clinic;
+  }
+  async addClinicDoctorMembership(actor, clinicId, input) {
+    v.object(input, ['doctorId']);
+    const clinic = await this.clinicScope(actor, clinicId), doctor = await this.requireDoctor(input.doctorId);
+    const id = newPostgresId();
+    await databaseOperation(() => this.db.$queryRaw`SELECT public.mediid_add_clinic_doctor_membership(${actor.id}::uuid,${clinic.id}::uuid,${doctor.id}::uuid,${id}::uuid,${newPostgresId()}::uuid)`);
+    return {id,doctorId:doctor.id,hospitalId:clinic.id,isPrimary:false};
+  }
+  async removeClinicDoctorMembership(actor, clinicId, doctorId) {
+    const clinic = await this.clinicScope(actor, clinicId);
+    const doctors = await this.repository.doctors(v.identifier(doctorId, {kind:'doctor'}), {limit:1,active:false});
+    if (doctors.length !== 1) throw new OrganizationError('ORG_NOT_FOUND');
+    await databaseOperation(() => this.db.$queryRaw`SELECT public.mediid_remove_clinic_doctor_membership(${actor.id}::uuid,${clinic.id}::uuid,${doctors[0].id}::uuid,${newPostgresId()}::uuid)`);
+    return {message:'Doctor removed from clinic'};
+  }
   async searchDoctors(query = {}, actor) {
     const paging = v.pagination(query,['q','specialization','hospital','available']), filters = {};
     for (const key of ['q','specialization']) if(query[key]!==undefined) filters[key]=v.text(query[key],150);

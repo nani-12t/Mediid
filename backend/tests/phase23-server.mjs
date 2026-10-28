@@ -116,6 +116,26 @@ try {
     assert.equal((await api('hospitals',{method:'POST',token:doctorToken,body:{name:'Duplicate synthetic clinic'}})).status,409);
     assert.equal((await api('hospitals/admin/profile',{token:doctorToken})).status,403);
   });
+  await check('mounted clinic owner adds an existing doctor with safe group search and preserved roles', async () => {
+    const path='hospitals/'+clinic.internalId+'/doctor-memberships';
+    assert.equal((await api(path,{method:'POST',token:adminToken,body:{doctorId:recruited.internalId}})).status,403);
+    const result=await api(path,{method:'POST',token:doctorToken,body:{doctorId:recruited.internalId}}); ok(result,201);
+    assert.equal(result.body.doctorId,recruited.internalId); assert.equal(result.body.hospitalId,clinic.internalId); assert.equal(result.body.isPrimary,false);
+    const search=await api('doctors?hospital='+clinic.internalId); ok(search); assert.equal(search.body.length,2);
+    const detail=await api('hospitals/'+clinic.internalId); ok(detail); assert.equal(detail.body.doctors.length,2);
+    for(const row of search.body)for(const key of ['phone','email','registrationNumber','activation'])assert.equal(Object.hasOwn(row,key),false,key);
+    assert.equal((await database.db.query('SELECT role::text role FROM users WHERE id=$1',[doctorUser])).rows[0].role,'doctor');
+    assert.equal((await database.db.query('SELECT user_id FROM doctors WHERE id=$1',[recruited.internalId])).rows[0].user_id,null);
+  });
+  await check('mounted clinic removal preserves the doctor and other hospital membership', async () => {
+    const path='hospitals/'+clinic.internalId+'/doctor-memberships/';
+    assert.equal((await api(path+doctor,{method:'DELETE',token:doctorToken})).status,403);
+    ok(await api(path+recruited.internalId,{method:'DELETE',token:doctorToken}));
+    const memberships=(await database.db.query('SELECT hospital_id FROM doctor_hospital_memberships WHERE doctor_id=$1',[recruited.internalId])).rows;
+    assert.deepEqual(memberships.map(row=>row.hospital_id),[hospital]);
+    assert.equal((await database.db.query('SELECT count(*)::int n FROM doctors WHERE id=$1',[recruited.internalId])).rows[0].n,1);
+    const search=await api('doctors?hospital='+clinic.internalId); ok(search); assert.equal(search.body.length,1);
+  });
   await check('provider ownership rejects cross-role mutations and immutable identity changes', async () => {
     assert.equal((await api('hospitals/'+clinic.internalId,{method:'PUT',token:adminToken,body:{name:'Forbidden'}})).status,403);
     assert.equal((await api('doctors/'+recruited.internalId,{method:'PUT',token:doctorToken,body:{firstName:'Forbidden'}})).status,403);

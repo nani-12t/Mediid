@@ -8,17 +8,29 @@ Set ORGANIZATION_BACKEND explicitly to legacy or postgres in the application env
 
 GET /api/organizations/config reports the selected provider backend. See .env.example and AUTH_HARDENING.md. No dependency was added or upgraded in this phase.
 
-Deploy the new forward migration 202610250001_phase23_provider_hierarchy after all seven reviewed migrations, using the separate mediid_migrator credential. Existing migration contents remain unchanged. Prisma schema generation reflects the new optional clinic ownership relation. The application receives only mediid_runtime credentials.
+Deploy all nine migrations in order using the separate mediid_migrator credential: the original seven, 202610250001_phase23_provider_hierarchy, then the forward-only 202610280001_phase23_group_clinic_membership correction. All eight already-pushed migrations remain unchanged. The original provider migration adds the optional clinic ownership relation; the correction adds narrowly scoped membership operations and updates template authorization. The application receives only mediid_runtime credentials.
 
 Existing hospital-admin and private-doctor identities come from the reviewed identity reconciliation/operator provisioning boundary; this phase does not add public privileged account registration or a full Mongo backfill.
 
 ## Clinic ownership (ADR-018)
 
-Hospital.userId remains the distinct hospital-admin owner when present. Hospital.clinicOwnerDoctorId is a nullable unique FK to Doctor. A database XOR check permits either the admin user or the clinic-owner doctor; doctor ownership additionally requires type=clinic. A doctor owns at most one clinic in this phase.
+Hospital.userId remains the distinct hospital-admin owner when present. Hospital.clinicOwnerDoctorId is a nullable unique FK to Doctor. A database XOR check permits either the admin user or the clinic-owner doctor; doctor ownership additionally requires type=clinic. A doctor owns at most one clinic in this phase. Each doctor-owned clinic has exactly one owning doctor and zero or more additional doctor members; one owned clinic per doctor does not mean one doctor per clinic. Every practicing doctor, including the owner, requires an explicit DoctorHospitalMembership.
 
 POST /api/hospitals accepts an active, authenticated private-practice doctor. The database locks that doctor and atomically creates the Hospital(type=clinic), public HID, explicit DoctorHospitalMembership and attributed audit entry. Concurrent duplicates yield one clinic and a safe conflict. The doctor's auth role remains doctor. Existing primary membership is retained; a first membership may populate convenience primary metadata.
 
 PUT /api/hospitals/:id lets that doctor edit only their clinic's allowlisted profile fields. Hospital-admin profile ownership is a separate route and policy. Private clinics receive no receptionist/staff recruitment or hospital-admin authority; the shared provisioning guard rejects clinic organizations, including legacy admin-owned clinic rows. The resulting Hospital.id is valid for the future organizational FK invariant; Phase 2.3 never creates an appointment to demonstrate it.
+
+## Group-clinic practitioner memberships
+
+Only the current active PostgreSQL doctor identified by Hospital.clinicOwnerDoctorId may add or remove practitioner memberships for that active Hospital(type=clinic). Ownership is checked in PostgreSQL; primaryHospitalId and another organization's authority grant nothing. The owner remains role doctor.
+
+POST /api/hospitals/:clinicId/doctor-memberships accepts exactly {"doctorId":"<doctor identifier>"}. clinicId and doctorId support canonical PostgreSQL UUIDs or canonical lowercase Mongo ObjectIds only when the imported mapping is proven by the existing identity link. This request does not accept public UIDs or guess identifier types. The target Doctor must already exist and be active; if linked to a User, that User must be active with role doctor. The operation atomically creates one non-primary explicit membership and attributable audit, preserving existing primary metadata. Concurrent duplicate additions produce one relationship and a safe conflict.
+
+DELETE /api/hospitals/:clinicId/doctor-memberships/:doctorId removes only a non-owner doctor's membership in that clinic. It preserves the Doctor, linked User, other memberships and audit history. If the removed membership was primary or primaryHospitalId points to that clinic, primaryHospitalId is cleared to NULL; no other membership is promoted or modified. The owner cannot remove their own ownership membership through this generic route. Clinic ownership transfer/deletion is outside this correction.
+
+No identity, activation credential, hospital_admin role, receptionist/front-desk authority or EHR permission is created. Unrelated doctors, hospital admins, hospital staff, support agents and patients cannot manage these memberships. Clinic owners control membership; every practitioner controls only their own calendar.
+
+Public GET /api/doctors?hospital=<clinic identifier> and clinic detail use the explicit memberships to present all active clinic doctors consistently. Public DTOs continue excluding private doctor contact and registration fields.
 
 ## APIs and compatibility
 
@@ -28,6 +40,8 @@ PUT /api/hospitals/:id lets that doctor edit only their clinic's allowlisted pro
 | GET/PUT /api/hospitals/admin/profile | Active hospital-admin owner only |
 | POST /api/hospitals | Private-doctor clinic creation |
 | PUT /api/hospitals/:id | Owning private doctor updates clinic profile |
+| POST /api/hospitals/:clinicId/doctor-memberships | Owning doctor adds an existing active doctor to that clinic |
+| DELETE /api/hospitals/:clinicId/doctor-memberships/:doctorId | Owning doctor removes only a non-owner clinic membership |
 | GET /api/doctors, /:id, /uid/:uid | Public active doctor search/detail using explicit memberships |
 | GET /api/doctors/:id/manage | Same-hospital admin reads private management contact fields |
 | POST /api/doctors | Same-hospital admin uses reviewed secure provisioning |
@@ -54,7 +68,7 @@ Generic updates reject immutable owner/user/UID/role/rating/sequence/private-pra
 
 ## Availability and deferred scheduling
 
-RecurringAvailabilityTemplate CRUD is doctor-owned. A hospital context requires current explicit membership and an active organization. A clinic context additionally belongs to that private doctor. Null context remains valid only for private-practice doctors. Another doctor, hospital admin, staff or support agent cannot edit a doctor's independent templates.
+RecurringAvailabilityTemplate CRUD is doctor-owned. Hospital and private-clinic contexts both require a current active explicit DoctorHospitalMembership and an active organization. An additional group-clinic doctor does not need to own the clinic to manage their own clinic-context templates. The clinic owner cannot create, update or remove another doctor's templates. After membership removal, the removed doctor cannot create or update templates for that clinic; primaryHospitalId alone grants nothing. Null context remains valid only for private-practice doctors. Another doctor, hospital admin, staff or support agent cannot edit a doctor's independent templates.
 
 Templates validate day, time range, date range, timezone, channel and numeric bounds. They are a provider foundation only. No DoctorSlot capacity engine, ScheduleOverride API, materialization worker, reservation, hold, payment deadline, appointment booking, cancellation, refund or consultation window is implemented.
 
@@ -72,5 +86,6 @@ Run from backend:
     npm run test:organizations:unit
     npm run test:organizations
     npm run test:organizations:http
+    npm run test:organizations:group
 
-Required existing schema/native/infrastructure/auth/Redis/Mongo suites and frontend tests/build are also rerun. New tests use disposable synthetic PostgreSQL, Redis and Mongo; independent native connections demonstrate concurrency. PGlite is used only for existing single-session schema regressions. Evidence stays in ignored .test-data; concise executed results belong in DEVELOPMENT_STATUS.md.
+Required existing schema/native/infrastructure/auth/Redis/Mongo suites and frontend tests/build are also rerun. New tests use disposable synthetic PostgreSQL, Redis and Mongo; independent native connections demonstrate concurrency. PGlite is used only for existing single-session schema regressions. Evidence stays in ignored .test-data; concise executed results belong in DEVELOPMENT_STATUS.md. The targeted group-clinic correction starts from b1548d87bb9c6b81da728bdd702a9895c2de6e99 and remains pending external review. Its new verification results are recorded separately from the initial Phase 2.3 baseline evidence.

@@ -4,7 +4,8 @@ MEDIID Node/Express backend language: JavaScript/CommonJS.
 Do not introduce TypeScript into the Node backend.
 Python/FastAPI is reserved for the separate AI service.
 
-Single active repository: Mediid-main. Phase 2.3 baseline: 061d7f7f4d91a149aead14d68b4176cb338a00f8.
+Single active repository: Mediid-main. Phase 2.3 implementation baseline: 061d7f7f4d91a149aead14d68b4176cb338a00f8.
+Group-clinic correction baseline: b1548d87bb9c6b81da728bdd702a9895c2de6e99.
 Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 
 | Phase | Status |
@@ -16,6 +17,50 @@ Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 | Phase 2.2B | COMPLETE (externally reviewed) |
 | Phase 2.3 | IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW |
 | Phase 2.4 | NOT STARTED |
+
+## Phase 2.3 group-clinic external review correction — 2026-10-28
+
+Phase 2.3 — IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. All required correction checks passed; external review is pending. Phase 2.4 is NOT STARTED.
+
+The targeted correction starts from clean main and origin/main at b1548d87bb9c6b81da728bdd702a9895c2de6e99. It adds only the group-practice membership and recurring-template authorization missing from ADR-013/ADR-014; the initial Phase 2.3 implementation is not repeated.
+
+New forward-only migration: 202610280001_phase23_group_clinic_membership. All eight previously pushed migrations, including 202610250001_phase23_provider_hierarchy, remain unchanged. A doctor-owned clinic has one owning doctor and zero or more additional doctor members. One owned clinic per doctor does not mean one doctor per clinic; every practicing doctor requires an explicit DoctorHospitalMembership.
+
+POST /api/hospitals/:clinicId/doctor-memberships accepts only {doctorId}, resolving canonical PostgreSQL UUIDs or proven mapped legacy Mongo ObjectIds; this contract does not accept public UIDs. The current active PostgreSQL owner doctor may atomically add an existing active doctor with an attributable audit. Additions are always non-primary and preserve existing primary metadata. A linked target User must be active with role doctor. DELETE /api/hospitals/:clinicId/doctor-memberships/:doctorId removes only a non-owner clinic membership and preserves the doctor, user, other memberships and audit history. If the removed membership was primary or primaryHospitalId points to that clinic, primaryHospitalId is cleared to NULL; no other membership is promoted or modified. Generic removal cannot detach the owner's ownership membership. Neither operation creates an identity or changes roles.
+
+Every doctor may manage only their own recurring availability in an active hospital or clinic where they have an active explicit membership. Clinic ownership is not required to use a clinic context and does not allow editing another doctor's calendar. Removed members cannot create or update that clinic's templates; primaryHospitalId alone grants nothing. Public clinic doctor search and clinic detail continue using explicit memberships and safe DTOs.
+
+The correction adds no hospital_admin, receptionist/front-desk, support or EHR authority. No frontend redesign, appointment, materialized slot, reservation, payment hold, booking, cancellation, rescheduling or Phase 2.4 work is included.
+
+### Correction verification
+
+The initial Phase 2.3 PASS results below are historical evidence from b1548d8 and do not stand in for correction reruns.
+
+| Required correction check | Actual result |
+| --- | --- |
+| Prisma 6.19.3 validation / generation | PASS / PASS |
+| JavaScript source syntax | 34 files PASS |
+| Phase 2.3 organization unit regressions | 8 PASS |
+| Existing Phase 2.3 native provider integration | 26 PASS, including 4 independent provider races |
+| Actual server.js provider integration | 14 PASS, including 2 new group-clinic checks |
+| New test:organizations:group runtime/security/HTTP checks | 28 PASS; all 20 requested security cases covered |
+| New independent native group-clinic concurrency | 2 PASS: duplicate add and template creation/removal |
+| Phase 2.2 auth unit / native foundation | 31 / 39 PASS |
+| Phase 2.2B sessions / provisioning | 13 / 13 PASS |
+| hospital_staff / real Redis | 11 / 5 PASS |
+| Identity reconciliation / mounted auth HTTP | 16 / 15 PASS |
+| Mongo/Express legacy regressions | 20 PASS |
+| Phase 2.1 native infrastructure / units | 24 / 10 PASS; all 9 migrations deployed |
+| Exact Phase 1.3.1 native schema / review | 27 / 70 PASS |
+| Existing independent native concurrency | 4 PASS |
+| Frontend provider and auth tests | 23 PASS across 3 suites |
+| Frontend production build | PASS; existing Browserslist/fs.F_OK warnings |
+
+All required correction checks completed successfully; none were skipped. Tests used disposable synthetic services and actual restricted mediid_runtime credentials where applicable. The 28-check group-clinic suite verifies owner/member roles remain doctor, exactly one explicit membership, safe UUID/proven-legacy mapping, public member search and clinic detail without private contact fields, the member's own clinic-context availability, both cross-doctor template denials, safe removal and preservation of other memberships, owner self-removal denial, primaryHospitalId-only denial, attributable membership audits and clinical/EHR access denial. After removal, both clinic-context template creation and update return 403.
+
+Two independent native PostgreSQL races verify one winner for duplicate additions and safe serialization of template creation against membership removal. The race connections use a 10-second PostgreSQL statement_timeout and a 15-second watchdog; no PGlite concurrency evidence is substituted. The new native test script also passed node --check.
+
+No production database/service/data, cutover, deployment, load or real SMTP delivery was exercised. No appointments, materialized slots, reservations, payment holds or booking flows were created. Phase 2.4 and Phase 2.5 implementation remain outside this correction.
 
 ## Phase 2.3 provider hierarchy — 2026-10-25
 
@@ -33,13 +78,13 @@ Hospital-admin profile reads/updates are ownership-scoped. Generic body allowlis
 
 Staff recruitment atomically allocates the hospital staff sequence and existing role UID codes (NUR/REC/LAB/PHR/RAD/ADM/STF). Roster records do not create login identities. Roster reads/mutations remain admin-own-hospital only; deletion deactivates, without deleting linked users/audits. hospital_staff/support retain no provider management, receptionist-clinic or EHR authority.
 
-RecurringAvailabilityTemplate list/create/update/deactivate is doctor-owned, with current explicit membership for hospital context and owned private clinic context. No deprecated DoctorSlot capacity engine, slot materialization, reservation, payment hold, booking, cancellation/refund or consultation window was added. Remaining doctor-portal slots/queue/EHR paths return AUTH_DOMAIN_NOT_MIGRATED in PostgreSQL provider mode. Patient longitudinal data, appointments, billing, pharmacy, marketplace and AI remain unmigrated.
+At the initial Phase 2.3 baseline, RecurringAvailabilityTemplate list/create/update/deactivate was doctor-owned, with current explicit membership for hospital context and an owner-only private clinic context. The group-clinic correction above replaces the clinic ownership restriction with explicit practitioner membership while retaining own-calendar authority. No deprecated DoctorSlot capacity engine, slot materialization, reservation, payment hold, booking, cancellation/refund or consultation window was added. Remaining doctor-portal slots/queue/EHR paths return AUTH_DOMAIN_NOT_MIGRATED in PostgreSQL provider mode. Patient longitudinal data, appointments, billing, pharmacy, marketplace and AI remain unmigrated.
 
 Private staff/template reads and provider mutations use current-actor SECURITY DEFINER functions with fixed search_path and narrow EXECUTE permissions. Exact scoped getters work beyond bounded list windows. Runtime gains provider profile/membership columns only; native tests continue denying clinical/document/research/payment reads, direct provider writes, DDL, migration-history mutation and role escalation.
 
 Minimal frontend management/settings changes use explicit PostgreSQL payloads and authorized doctor details, scope the roster to the admin's hospital, show the new doctor's activation handoff once in component state, preserve public QR behavior and disable unsupported operational settings. Legacy payload behavior remains available.
 
-### Executed Phase 2.3 verification
+### Initial Phase 2.3 verification (historical baseline)
 
 | Required check | Actual result |
 | --- | --- |

@@ -24,6 +24,8 @@ function createOrganizationRouter(runtime,service) {
   router.get('/hospitals/uid/:uid',safe(async(req,res)=>res.json(await service.hospital(req.params.uid,{uid:true}))));
   router.get('/hospitals/:id',safe(async(req,res)=>res.json(await service.hospital(req.params.id))));
   router.put('/hospitals/:id',authenticate,safe(async(req,res)=>res.json(await service.updateClinic(req.principal,req.params.id,req.body))));
+  router.post('/hospitals/:clinicId/doctor-memberships',authenticate,safe(async(req,res)=>res.status(201).json(await service.addClinicDoctorMembership(req.principal,req.params.clinicId,req.body))));
+  router.delete('/hospitals/:clinicId/doctor-memberships/:doctorId',authenticate,safe(async(req,res)=>res.json(await service.removeClinicDoctorMembership(req.principal,req.params.clinicId,req.params.doctorId))));
   const optionalAuthenticate=(req,res,next)=>req.headers.authorization?authenticate(req,res,next):next();
   router.get('/doctors',optionalAuthenticate,safe(async(req,res)=>res.json(await service.searchDoctors(req.query,req.principal))));
   router.post('/doctors',authenticate,safe(async(req,res)=>res.status(201).json(await service.recruitDoctor(req.principal,req.body))));
