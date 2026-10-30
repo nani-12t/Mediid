@@ -36,7 +36,11 @@
     "test:organizations:group": "node tests/phase23-group-clinic.mjs",
     "test:patients:unit": "node --test tests/patients-unit.test.cjs",
     "test:patients": "node tests/phase24-patients.mjs",
-    "test:patients:http": "node tests/phase24-server.mjs"
+    "test:patients:http": "node tests/phase24-server.mjs",
+    "test:appointments:unit": "node --test tests/appointments-unit.test.cjs",
+    "test:appointments": "node tests/phase25-appointments.mjs",
+    "test:appointments:http": "node tests/phase25-server.mjs",
+    "test:appointments:scheduler": "node tests/phase25-scheduler.mjs"
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.5",

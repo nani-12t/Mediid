@@ -73,3 +73,9 @@ Phase 2.2B forward execution order (the five historical migrations remain unchan
 7. `202610240002_phase22b_provisioning`: doctor activation, attributable hospital memberships and explicit staff identity link with scoped SECURITY DEFINER operations.
 
 Deploy all seven directories in lexical order through the existing separate migrator credential. Do not concatenate or reapply merged migrations; existing databases require the normal Prisma migration ledger. See AUTH_HARDENING.md for current grants and limitations.
+
+## Phase 2.5 execution and runtime contract
+
+Current setup deploys all eleven migrations in lexical order. After the original seven listed above, Phase 2.3 adds 202610250001_phase23_provider_hierarchy and 202610280001_phase23_group_clinic_membership; Phase 2.4 adds 202610280002_phase24_patient_demographics_benefits; Phase 2.5 adds 202610300001_phase25_appointments_scheduler. All ten historical migrations and constraints.sql remain unchanged.
+
+The Phase 2.5 forward migration composes the frozen booking/reservation/deadline/financial triggers through scoped SECURITY DEFINER functions. Numbered retained active reservations remain capacity truth; provider policy snapshots and database-computed deadlines remain authoritative. Membership deletion conflicts with active future bookings and blocks unused future slots. Consultation sessions gain optional starts_at for historical compatibility, with new operational windows exactly slotStart - 10 minutes to slotStart + 2 hours and unique appointment-domain links. Duplicate historical links cause migration failure for review. No clinical API or unified billing grant is added. See APPOINTMENTS.md and ADR-020 for operation/authorization details.

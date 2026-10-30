@@ -206,3 +206,22 @@ test('secondary logout revokes only its explicit doctor session and preserves th
   expect(requests.at(-1).headers.Authorization).toBe(`Bearer ${admin}`);
   expect(requests.some(request => request.url === '/auth/refresh')).toBe(false);
 });
+
+
+test('appointment payment sends an empty body with the stable explicit operation key', async () => {
+  const client = load(); const requests = mock(client);
+  await client.appointmentAPI.pay('synthetic-appointment', 'synthetic-payment-operation');
+  await client.appointmentAPI.pay('synthetic-appointment', 'synthetic-payment-operation');
+  const payments = requests.filter(request => request.url === '/appointments/synthetic-appointment/pay');
+  expect(payments).toHaveLength(2);
+  expect(payments.map(request => request.headers['Idempotency-Key'])).toEqual(['synthetic-payment-operation', 'synthetic-payment-operation']);
+  expect(payments.map(request => JSON.parse(request.data))).toEqual([{}, {}]);
+});
+
+test('appointment reschedule helper sends only the selected materialized slot', async () => {
+  const client = load(); const requests = mock(client);
+  await client.appointmentAPI.reschedule('synthetic-appointment', 'synthetic-slot');
+  const request = requests.find(item => item.url === '/appointments/synthetic-appointment/reschedule');
+  expect(request.method).toBe('post');
+  expect(JSON.parse(request.data)).toEqual({ slotId: 'synthetic-slot' });
+});

@@ -3,10 +3,14 @@ import { Calendar, Plus, X, Clock, CheckCircle, XCircle, RefreshCw, Bell } from 
 import { Link } from 'react-router-dom';
 import PatientLayout from '../../components/common/PatientLayout';
 import { appointmentAPI } from '../../utils/api';
+import AppointmentReschedule from '../../components/common/AppointmentReschedule';
 import toast from 'react-hot-toast';
 
 const STATUS_COLORS = {
   pending:     'badge-amber',
+  reminder_sent: 'badge-amber',
+  checked_in: 'badge-teal',
+  expired: 'badge-gray',
   confirmed:   'badge-teal',
   cancelled:   'badge-red',
   completed:   'badge-gray',
@@ -17,6 +21,9 @@ const METHOD_ICONS = { app:'🖥️', phone:'📞', whatsapp:'💬', sms:'📱',
 
 export default function PatientAppointments() {
   const [appointments, setAppointments] = useState([]);
+  const [backend, setBackend] = useState(null);
+  const [error, setError] = useState('');
+  const [paying, setPaying] = useState(null);
   const [tab, setTab]                   = useState('upcoming');
   const [loading, setLoading]           = useState(true);
   const [confirming, setConfirming]     = useState(null); // apt._id being confirmed
@@ -24,9 +31,13 @@ export default function PatientAppointments() {
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
+      setError('');
+      const { data: config } = await appointmentAPI.getConfig();
+      if (!['legacy', 'postgres'].includes(config.backend)) throw new Error('Appointment configuration is unavailable.');
+      setBackend(config.backend);
       const { data } = await appointmentAPI.getMyAppointments();
       setAppointments(data);
-    } catch (e) {}
+    } catch (e) { setError(e.response?.data?.message || 'Appointments are temporarily unavailable. Please retry.'); setAppointments([]); }
     if (!silent) setLoading(false);
   };
 
@@ -45,20 +56,37 @@ export default function PatientAppointments() {
   const confirmAppointment = async (apt) => {
     setConfirming(apt._id);
     try {
-      // Use the public confirm-token endpoint — no auth needed
-      const res = await fetch(
-        `${process.env.REACT_APP_API_URL || '/api'}/appointments/confirm/${apt.confirmToken}`
-      );
-      if (res.ok) {
-        toast.success('✅ Appointment confirmed! You will receive an SMS shortly.');
-        load();
+      if (backend === 'postgres') {
+        await appointmentAPI.confirm(apt._id);
+        toast.success('Acknowledgement recorded. Payment and provider confirmation requirements still apply.');
       } else {
-        toast.error('Could not confirm — please try again');
+        await appointmentAPI.confirmLink(apt.confirmToken);
+        toast.success('Appointment confirmed!');
       }
+      await load();
     } catch {
       toast.error('Network error');
     }
     setConfirming(null);
+  };
+
+  const pay = async apt => {
+    setPaying(apt._id);
+    try {
+      const epoch = `${apt._id}:${apt.slotId || ''}:${apt.rescheduleCount || 0}`;
+      const storageKey = `mediid:appointment-payment:${epoch}`;
+      let key = sessionStorage.getItem(storageKey);
+      if (!key) {
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        key = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+        sessionStorage.setItem(storageKey, key);
+      }
+      await appointmentAPI.pay(apt._id, key);
+      toast.success('Payment processed. Your appointment status has been refreshed.');
+      await load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Payment is temporarily unavailable. Retry with the same payment request.'); }
+    finally { setPaying(null); }
   };
 
   const today = new Date();
@@ -67,13 +95,13 @@ export default function PatientAppointments() {
   const upcoming = appointments.filter(a => {
     const apptDate = new Date(a.appointmentDate);
     apptDate.setHours(0, 0, 0, 0);
-    return apptDate >= today && a.status !== 'cancelled' && a.status !== 'completed';
+    return apptDate >= today && !['cancelled', 'completed', 'expired'].includes(a.status);
   });
 
   const past = appointments.filter(a => {
     const apptDate = new Date(a.appointmentDate);
     apptDate.setHours(0, 0, 0, 0);
-    return apptDate < today || a.status === 'cancelled' || a.status === 'completed';
+    return apptDate < today || ['cancelled', 'completed', 'expired'].includes(a.status);
   });
 
   const shown    = tab === 'upcoming' ? upcoming : past;
@@ -111,13 +139,14 @@ export default function PatientAppointments() {
               You have {pendingCount} appointment{pendingCount > 1 ? 's' : ''} waiting for your confirmation
             </p>
             <p style={{ fontSize:13, color:'#b45309' }}>
-              Tap <strong>"Confirm Appointment"</strong> below each pending request to confirm your slot.
-              You can also tap the link in the SMS we sent you.
+              {backend === 'postgres' ? 'Acknowledge your appointment below. Required payment and provider confirmation still apply.' : <>Tap <strong>"Confirm Appointment"</strong> below each pending request to confirm your slot.</>}
+              {backend === 'legacy' && 'You can also tap the link in the SMS we sent you.'}
             </p>
           </div>
         </div>
       )}
 
+      {error && <p role="alert">{error}</p>}
       <div className="tabs">
         <button className={`tab-btn ${tab === 'upcoming' ? 'active' : ''}`} onClick={() => setTab('upcoming')}>
           Upcoming ({upcoming.length})
@@ -158,11 +187,13 @@ export default function PatientAppointments() {
                     <span className={`badge ${
                       apt.status === 'completed' ? 'badge-gray' :
                       apt.status === 'cancelled' ? 'badge-red' :
+                      apt.status === 'expired' ? 'badge-gray' :
                       new Date(apt.appointmentDate).setHours(0,0,0,0) < new Date().setHours(0,0,0,0) ? 'badge-amber' :
                       STATUS_COLORS[apt.status]
                     }`} style={{ fontSize:11, textTransform:'capitalize' }}>
                       {apt.status === 'completed' ? '🏁 Completed' :
                        apt.status === 'cancelled' ? '❌ Cancelled' :
+                       apt.status === 'expired' ? 'Expired' :
                        new Date(apt.appointmentDate).setHours(0,0,0,0) < new Date().setHours(0,0,0,0) ? '⚠️ Not Attended' :
                        apt.status === 'pending' ? '⏳ Pending Confirmation' :
                        apt.status === 'confirmed' ? '✅ Confirmed' : apt.status}
@@ -193,15 +224,26 @@ export default function PatientAppointments() {
                 </div>
               </div>
 
+              {backend === 'postgres' && <div style={{ marginTop: 12 }}>
+                <p>Total fee: {apt.currency || 'INR'} {apt.billAmount} - Amount paid: {apt.currency || 'INR'} {apt.amountPaid || '0.00'}</p>
+                <p>{apt.billStatus === 'deposit_paid' ? 'Deposit paid - remaining consultation fee may still be due.' : apt.billStatus === 'paid' ? 'Appointment fee paid.' : 'Appointment fee pending.'}</p>
+                {['HELD', 'PENDING'].includes(apt.paymentHoldStatus) && !['cancelled', 'expired', 'completed'].includes(apt.status) && <>
+                  <p>Waiting for payment - Deposit due: {apt.currency || 'INR'} {Math.max(0, Number(apt.depositAmount || 0) - Number(apt.amountPaid || 0)).toFixed(2)}</p>
+                  {apt.holdExpiresAt && <p>Payment deadline: {new Date(apt.holdExpiresAt).toLocaleString('en-IN')}</p>}
+                  <button className="btn btn-primary" disabled={paying === apt._id} onClick={() => pay(apt)}>{paying === apt._id ? 'Processing payment...' : 'Pay required deposit'}</button>
+                </>}
+                {['pending', 'reminder_sent'].includes(apt.status) && <p>{apt.confirmationMode === 'TIME_BASED' ? 'Final confirmation is scheduled by the provider.' : apt.confirmationMode === 'MANUAL' ? 'Waiting for hospital confirmation.' : 'Confirmation follows successful required payment.'}</p>}
+                {!['cancelled', 'expired', 'completed'].includes(apt.status) && <AppointmentReschedule appointment={apt} onChanged={load} />}
+              </div>}
               {/* Action buttons */}
-              {apt.status === 'pending' && (
+              {(['pending', 'reminder_sent'].includes(apt.status) || (backend === 'postgres' && ['confirmed', 'checked_in'].includes(apt.status))) && (
                 <div style={{ display:'flex', gap:10, marginTop:14, paddingTop:12, borderTop:'1px solid var(--gray-100)' }}>
                   <button
                     onClick={() => confirmAppointment(apt)}
-                    disabled={confirming === apt._id}
+                    disabled={confirming === apt._id || (backend === 'postgres' && (Boolean(apt.patientConfirmedAt) || !['pending', 'reminder_sent'].includes(apt.status)))}
                     style={{ flex:2, padding:'10px 0', borderRadius:10, border:'none', background: confirming === apt._id ? '#a7f3d0' : 'var(--teal)', color:'#fff', fontSize:14, fontWeight:600, cursor: confirming === apt._id ? 'not-allowed' : 'pointer' }}
                   >
-                    {confirming === apt._id ? 'Confirming...' : '✅ Confirm Appointment'}
+                    {confirming === apt._id ? 'Confirming...' : backend === 'postgres' ? (apt.patientConfirmedAt ? 'Acknowledged' : 'Acknowledge Appointment') : '✅ Confirm Appointment'}
                   </button>
                   <button
                     onClick={() => cancel(apt._id)}

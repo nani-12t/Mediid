@@ -330,15 +330,35 @@ export const leaveAPI = {
   cancelRequest: (id) => api.delete(`/leave/request/${id}`)
 };
 
+// Retain one payment operation key through retries and page reloads in this tab.
+export const appointmentPaymentKey = id => {
+  const storageKey = `mediid:appointment-payment:${id}`;
+  let key = sessionStorage.getItem(storageKey);
+  if (!key) {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    key = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+    sessionStorage.setItem(storageKey, key);
+  }
+  return key;
+};
+
 // Appointments
 export const appointmentAPI = {
+  getConfig: () => api.get('/appointments/config'),
+  getAvailability: params => api.get('/appointments/availability', { params }),
+  getDoctorAppointments: () => api.get('/appointments/doctor'),
+  confirm: id => api.post(`/appointments/${id}/confirm`, {}),
+  confirmLink: token => api.get(`/appointments/confirm/${encodeURIComponent(token)}`),
+  reschedule: (id, slotId) => api.post(`/appointments/${id}/reschedule`, { slotId }),
+  checkIn: id => api.post(`/appointments/${id}/check-in`, {}),
   create: (data) => api.post('/appointments', data),
   getMyAppointments: () => api.get('/appointments/my'),
   getHospitalAppointments: (params) => api.get('/appointments/hospital', { params }),
   getPendingCount: () => api.get('/appointments/hospital/count'),
   updateStatus: (id, data) => api.put(`/appointments/${id}/status`, data),
   cancel: (id) => api.delete(`/appointments/${id}`),
-  pay: (id) => api.put(`/appointments/${id}/pay`)
+  pay: (id, key = appointmentPaymentKey(id)) => api.put(`/appointments/${id}/pay`, {}, { headers: { 'Idempotency-Key': key } })
 };
 
 // Insurance
@@ -413,4 +433,4 @@ export const pharmacyPortalAPI = {
   dispensePrescription: (data) => api.post('/pharmacy-portal/dispense', data)
 };
 
-export default api;
+export default api;

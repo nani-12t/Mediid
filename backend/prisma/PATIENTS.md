@@ -12,7 +12,7 @@ PostgreSQL mode additionally requires PATIENT_AADHAAR_HASH_KEY: at least 32 UTF-
 
 Public-scan settings are PATIENT_SCAN_WINDOW_MS (default 60000, range 100-3600000), PATIENT_SCAN_SOURCE_MAX (default 60) and PATIENT_SCAN_IDENTITY_MAX (default 120); each maximum ranges from 1 to 10000. The existing distributed Redis limiter uses an isolated patientScan operation and HMAC dimensions for source and requested identity. Raw MID/source values do not appear in Redis keys. The source is the direct socket peer; a proxy deployment needs a separately reviewed trust-proxy design. Limits return 429 with Retry-After; Redis failure returns a safe 503 rather than disabling protection.
 
-Deploy all ten forward migrations with the separate mediid_migrator credential. The new tenth migration is 202610280002_phase24_patient_demographics_benefits; all nine previously pushed migrations remain unchanged. No Prisma schema redesign or dependency addition is needed. The application receives only mediid_runtime credentials.
+Deploy all eleven forward migrations with the separate mediid_migrator credential. Phase 2.4 adds the tenth migration 202610280002_phase24_patient_demographics_benefits; Phase 2.5 adds 202610300001_phase25_appointments_scheduler. All ten previously pushed migrations remain unchanged. No Prisma schema redesign or dependency addition is needed. The application receives only mediid_runtime credentials.
 
 ## Patient identity and authorization
 
@@ -95,9 +95,9 @@ Four forward-only NOT VALID benefit checks guard source, nonnegative coverage, n
 
 ## Deferred domains and verification
 
-In PostgreSQL patient mode, document upload/delete, bills/payment, clinical history and all other unimplemented patient routes return AUTH_DOMAIN_NOT_MIGRATED (503). They do not fall back to Mongo. The Profile page disables/defer-labels clinical arrays and document controls. Dashboard QR remains supported; appointment requests remain independently deferred.
+In PostgreSQL patient mode, document upload/delete, bills/payment, clinical history and all other unimplemented patient routes return AUTH_DOMAIN_NOT_MIGRATED (503). They do not fall back to Mongo. The Profile page disables/defer-labels clinical arrays and document controls. Dashboard QR remains supported; appointment requests now use the independently selected Phase 2.5 appointment module.
 
-Phase 2.5 booking/materialization/reservations/holds/consultation/scheduler work, Phase 2.6 clinical history/notes/conditions/allergies/prescriptions/documents/EHR/consent enforcement, Phase 2.8 billing and Phase 2.10 full backfill remain unimplemented. The Phase 2.3 future-materializer invariant remains active template AND active doctor AND active organization AND current explicit membership.
+Phase 2.5 booking/materialization/reservations/holds/consultation/scheduler work is documented in APPOINTMENTS.md. Phase 2.6 clinical history/notes/conditions/allergies/prescriptions/documents/EHR/consent enforcement, Phase 2.8 billing and Phase 2.10 full backfill remain unimplemented. The materializer requires active template AND active doctor AND active organization AND current explicit membership.
 
 From backend, run:
 

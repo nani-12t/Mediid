@@ -747,9 +747,10 @@ model ConsultationSession {
   hospital Hospital? @relation("ConsultationHospitalContext", fields: [hospitalId], references: [id], onDelete: Restrict)
   patientId                    String                    @map("patient_id") @db.Uuid
   doctorId                     String                    @map("doctor_id") @db.Uuid
-  appointmentId                String?                   @map("appointment_id") @db.Uuid // Nullable to support domain split
-  hospitalAppointmentId         String?                   @map("hospital_appointment_id") @db.Uuid
-  privateClinicAppointmentId    String?                   @map("private_clinic_appointment_id") @db.Uuid
+  appointmentId                String?                   @unique(map: "consultation_legacy_once") @map("appointment_id") @db.Uuid // Nullable to support domain split
+  hospitalAppointmentId         String?                   @unique(map: "consultation_hospital_once") @map("hospital_appointment_id") @db.Uuid
+  privateClinicAppointmentId    String?                   @unique(map: "consultation_clinic_once") @map("private_clinic_appointment_id") @db.Uuid
+  startsAt                     DateTime?                 @map("starts_at") @db.Timestamptz(6)
   token                        String                    @unique @db.VarChar(128)
   status                       String                    @default("active") @db.VarChar(32) // active, completed, expired
   expiresAt                    DateTime                  @map("expires_at") @db.Timestamptz(6)

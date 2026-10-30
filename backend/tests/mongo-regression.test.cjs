@@ -9,7 +9,7 @@ const fs=require('node:fs');
 
 test('legacy Express/MongoDB registration, login and protected routes remain compatible',{timeout:600000},async t=>{
  const pair=generateKeyPairSync('rsa',{modulusLength:2048});
- const rsaEnv={AUTH_BACKEND:'legacy',ORGANIZATION_BACKEND:'legacy',PATIENT_BACKEND:'legacy',AUTH_JWT_ISSUER:'synthetic-legacy',AUTH_JWT_AUDIENCE:'synthetic-api',AUTH_JWT_KEY_ID:'test-key',AUTH_JWT_TTL_SECONDS:'900',AUTH_BCRYPT_COST:'12',AUTH_RESET_TTL_SECONDS:'900',AUTH_JWT_PRIVATE_KEY:pair.privateKey.export({type:'pkcs8',format:'pem'}),AUTH_JWT_PUBLIC_KEY:pair.publicKey.export({type:'spki',format:'pem'})};
+ const rsaEnv={AUTH_BACKEND:'legacy',ORGANIZATION_BACKEND:'legacy',PATIENT_BACKEND:'legacy',APPOINTMENT_BACKEND:'legacy',AUTH_JWT_ISSUER:'synthetic-legacy',AUTH_JWT_AUDIENCE:'synthetic-api',AUTH_JWT_KEY_ID:'test-key',AUTH_JWT_TTL_SECONDS:'900',AUTH_BCRYPT_COST:'12',AUTH_RESET_TTL_SECONDS:'900',AUTH_JWT_PRIVATE_KEY:pair.privateKey.export({type:'pkcs8',format:'pem'}),AUTH_JWT_PUBLIC_KEY:pair.publicKey.export({type:'spki',format:'pem'})};
  const emptyCwd=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'mediid-mongo-test-'));
  const serverPath=path.resolve('server.js');
  const mongo=await MongoMemoryServer.create({binary:{version:'7.0.30',downloadDir:path.resolve('.test-data/mongodb-binaries')},instance:{ip:'127.0.0.1'}});

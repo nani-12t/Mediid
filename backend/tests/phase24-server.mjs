@@ -46,7 +46,7 @@ try{
  const pair=generateKeyPairSync('rsa',{modulusLength:2048}),origin='https://patient-http-synthetic.invalid',env={};
  for(const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','USERPROFILE'])if(process.env[key])env[key]=process.env[key];
  Object.assign(env,{
-  NODE_ENV:'test',HOST:'127.0.0.1',PORT:String(await freePort()),AUTH_BACKEND:'postgres',ORGANIZATION_BACKEND:'postgres',PATIENT_BACKEND:'postgres',
+  NODE_ENV:'test',HOST:'127.0.0.1',PORT:String(await freePort()),AUTH_BACKEND:'postgres',ORGANIZATION_BACKEND:'postgres',PATIENT_BACKEND:'postgres',APPOINTMENT_BACKEND:'legacy',
   PATIENT_AADHAAR_HASH_KEY:randomBytes(32).toString('hex'),PATIENT_SCAN_WINDOW_MS:'60000',PATIENT_SCAN_SOURCE_MAX:'1000',PATIENT_SCAN_IDENTITY_MAX:'1000',
   MONGO_URI:mongo.getUri('phase24_http_synthetic'),MARKETPLACE_URI:mongo.getUri('phase24_marketplace_synthetic'),DOTENV_CONFIG_PATH:path.join(cluster.root,'absent.env'),PG_ENV_FILE:path.join(cluster.root,'absent.env'),
   PG_RUNTIME_URL:database.url('mediid_runtime',credentials.mediid_runtime),AUTH_REDIS_URL:redis.url,AUTH_RATE_KEY_SECRET:randomBytes(32).toString('hex'),
@@ -127,7 +127,7 @@ try{
   const scan=await api('patients/scan/MID-MONGO001',{withCookies:false});assert.equal(scan.status,404);assert.equal(scan.body.code,'PATIENT_NOT_FOUND');
  });
  await check('explicit legacy combination still mounts the existing Mongo patient route',async()=>{
-  const candidate={...env,PORT:String(await freePort()),AUTH_BACKEND:'legacy',ORGANIZATION_BACKEND:'legacy',PATIENT_BACKEND:'legacy'};delete candidate.PATIENT_AADHAAR_HASH_KEY;
+  const candidate={...env,PORT:String(await freePort()),AUTH_BACKEND:'legacy',ORGANIZATION_BACKEND:'legacy',PATIENT_BACKEND:'legacy',APPOINTMENT_BACKEND:'legacy'};delete candidate.PATIENT_AADHAAR_HASH_KEY;
   const legacy=launch(candidate);await ready(legacy);const legacyBase='http://127.0.0.1:'+candidate.PORT+'/api/';
   const config=await api('patients/config',{baseUrl:legacyBase,withCookies:false});ok(config);assert.deepEqual(config.body,{backend:'legacy'});
   const result=await api('patients/scan/MID-MONGO001',{baseUrl:legacyBase,withCookies:false});ok(result);assert.equal(result.body.name,'Mongo Only Synthetic');await stop(legacy);

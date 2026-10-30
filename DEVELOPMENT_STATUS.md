@@ -7,6 +7,7 @@ Python/FastAPI is reserved for the separate AI service.
 Single active repository: Mediid-main. Phase 2.3 implementation baseline: 061d7f7f4d91a149aead14d68b4176cb338a00f8.
 Group-clinic correction baseline: b1548d87bb9c6b81da728bdd702a9895c2de6e99.
 Phase 2.4 implementation baseline: 908cb967afd9162e3a9be78d71cd13c477be4ffe (externally reviewed Phase 2.3 correction).
+Phase 2.5 implementation baseline: c14a2a21dd72776d69d08d7fa24d4be4863b62f5 (externally reviewed Phase 2.4).
 Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 
 | Phase | Status |
@@ -17,12 +18,59 @@ Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 | JavaScript Standardization | COMPLETE (externally reviewed) |
 | Phase 2.2B | COMPLETE (externally reviewed) |
 | Phase 2.3 | COMPLETE (externally reviewed, including group-clinic correction) |
-| Phase 2.4 | IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW |
-| Phase 2.5 | NOT STARTED |
+| Phase 2.4 | COMPLETE (externally reviewed) |
+| Phase 2.5 | IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW |
+| Phase 2.6 | NOT STARTED |
+
+## Phase 2.5 operational appointments and consultation windows - 2026-10-30
+
+Phase 2.5 - IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. Baseline: clean main and fetched origin/main at externally reviewed Phase 2.4 commit c14a2a21dd72776d69d08d7fa24d4be4863b62f5. Phase 2.6 is NOT STARTED.
+
+The JavaScript/CommonJS appointment domain explicitly selects APPOINTMENT_BACKEND=legacy|postgres. PostgreSQL requires the reviewed PostgreSQL auth, organization and patient modes plus explicit appointment Redis. Startup rejects missing/auto/incompatible settings. Only one appointment router/scheduler is mounted; no Mongo, in-memory scheduler or unauthenticated legacy Socket.IO fallback is introduced. The example remains legacy, so this work performs no deployment or production cutover.
+
+The eleventh forward migration 202610300001_phase25_appointments_scheduler preserves all ten historical migrations and Phase 1.3.1 constraints. Narrow SECURITY DEFINER functions manage authorization, policies, overrides, IANA-timezone materialization, split-domain booking, numbered reservations, payment/refund transitions, rescheduling, notification claims and consultation windows. Runtime receives no direct financial/reservation/clinical writes or history-deletion authority. Consultation startsAt and unique domain links are added without fabricating historical times or deleting duplicate history.
+
+Rolling materialization defaults to 30 days (bounded 7–90), copies template properties and uses PostgreSQL timezone conversion and exclusion constraints. The invariant is active template AND active doctor AND active organization AND current explicit membership. Primary metadata/clinic ownership never substitute for membership. Doctor-owned blocking/CUSTOM_HOURS overrides reconcile the full set of windows, conflict with active reservations and retain released history. Membership removal conflicts with active future bookings; unused future slots become blocked while EXPIRED historical metadata remains terminal.
+
+Hospital admin or exact active linked same-hospital receptionist may operate non-clinic front desk. Other staff and cross-hospital actors are denied. Each clinic practitioner manages only their own appointments, including in group clinics; there is no private-clinic receptionist. Support assistance records current booking/handling actors, obeys policies/capacity/payments/cutoffs and receives no symptoms/notes or EHR. Patient bookings derive their own identity and all fee/deposit/deadline/seat/status/snapshot values from authoritative state.
+
+PostgreSQL owns seat locks, retained reservation history, immutable financial events and exact payment deadlines. The default 14:00 examples remain 13:20 -> 13:50, 13:43 -> 13:48, 13:48 -> 13:50, exactly 13:50 -> closed. Private online clinics require 50% deposit. Hospital DEPOSIT, TIME_BASED and MANUAL finalization remain separate from patient acknowledgement. Capture after expiry/cancellation is retained and reconciled/refunded without reclaiming capacity. Idempotency binds the operation and booking epoch; repeated identical requests do not capture twice.
+
+Cancellation evaluates frozen typed policy fields, guarantees provider full refunds or explicit current patient-approved transfer, releases only owned capacity and preserves ledger/history. Unsupported opaque cancellationRules JSON fails closed for operator reconciliation. Rescheduling locks old/new slots in order, retains old reservations, obtains fresh policy/deadline, charges only additional required deposit and recalculates one consultation window. Paid DEPOSIT rescheduling remains confirmed when already satisfied; unresolved payment intents or a new fee below captured funds require reconciliation.
+
+Public confirmation secrets are cryptographically generated, stored as digests only, delivered through a safe notification component and never returned in appointment DTOs. Public links are single-use with Redis HMAC source/digest limits; authenticated patients acknowledge through their own session. Final confirmation creates one scheduled internal consultation window from slotStart - 10 minutes to slotStart + 2 hours. Redis/BullMQ owns materialization, expiry, time confirmation, notification claims, payment reconciliation, refunds and window activation/expiry, with explicit stop and no process-local fallback.
+
+Frontend booking/rescheduling selects actual materialized slot IDs, shows deposit balances/deadlines/confirmation modes and uses stable payment keys per scheduling epoch. Hospital confirmation preserves the reserved date/time, with explicit rescheduling, cancellation and check-in/completion. The PostgreSQL doctor view shows own scheduling metadata and performs no EHR/prescription fetch or legacy socket initialization. Legacy paths remain available through explicit mode selection.
+
+### Phase 2.5 executed verification
+
+| Required check | Actual result |
+| --- | --- |
+| Prisma 6.19.3 validation / generation; JavaScript source syntax; server parse | PASS / PASS; 53 files PASS; PASS |
+| New appointment unit / native / actual server / real BullMQ scheduler | 14 / 38 / 14 / 10 PASS |
+| New independent native appointment races | 11 PASS, distinct actual PostgreSQL sessions |
+| Original exact native schema / corrective review / concurrency | 27 / 70 / 4 PASS |
+| Infrastructure unit / native deployment and permissions | 10 / 24 PASS; all 11 migrations deployed |
+| Phase 2.2 auth unit / native foundation | 31 / 39 PASS |
+| Sessions / provisioning / real Redis | 13 / 13 / 5 PASS |
+| Identity reconciliation / hospital_staff / actual auth HTTP | 16 / 11 / 15 PASS |
+| Phase 2.3 organization unit / native / group clinic / actual server | 8 / 26 / 28 / 14 PASS |
+| Phase 2.4 patient unit / native / actual server | 12 / 33 / 16 PASS |
+| Mongo/Express legacy regressions | 20 PASS |
+| All frontend auth/provider/patient/appointment tests | 62 PASS across 5 suites; none skipped |
+| Frontend production build | PASS; existing fs.F_OK/Browserslist notices |
+
+The 11 native races cover last seat, multiple seats, payment-versus-expiry, cancellation-versus-payment, competing reschedules, concurrent materialization, membership removal, one-use token replay, payment idempotency, capture idempotency and time confirmation. Native checks additionally cover paid rescheduling with an increased fresh deposit, stale payment epoch rejection, override unions and released history, inactive organizations, IANA legacy tuple resolution, support attribution, opaque policy refusal and runtime permissions.
+
+The actual server suite uses disposable PostgreSQL, Redis and MongoDB, verifies 13 role identities, exclusive explicit modes, eight invalid configurations, front-desk/group-clinic authority, membership conflicts, secure payment compatibility, shared Redis rate limits across servers and real PostgreSQL/Redis outages without Mongo fallback. Two real BullMQ schedulers verify canonical jobs/materialization, one logical reminder claim, retained expiry/reopening, reconciliation/refunds, time confirmation, consultation lifecycle and clean shutdown on the final migration.
+
+All required checks passed; no required check is skipped or reported as passed without execution. Synthetic fixture/test defects and the paid-reschedule, override-union/history, idempotency-epoch and membership-history edge cases found during testing were corrected before the final affected gates. Generated historical evidence changes are excluded from the phase commit.
+
+No dependencies or lockfiles changed. No production systems/data, real gateway transaction/card/reference, real SMS/email delivery, production TLS validation, load/deployment/cutover or historical backfill was executed. The deterministic payment provider is rejected in production; disabled/default payment execution fails closed until a real reviewed adapter is supplied. Phase 2.6 EHR/clinical/document/consent APIs and Phase 2.8 unified billing remain deferred. See backend/prisma/APPOINTMENTS.md and ADR-020.
 
 ## Phase 2.4 patient demographics and benefits - 2026-10-28
 
-Phase 2.4 - IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. All required checks passed; external review is pending. Phase 2.5 is NOT STARTED. Baseline: clean main and origin/main at externally reviewed 908cb967afd9162e3a9be78d71cd13c477be4ffe.
+Phase 2.4 - COMPLETE and externally reviewed at c14a2a21dd72776d69d08d7fa24d4be4863b62f5. The following implementation/verification record is retained as historical evidence. Baseline: clean main and origin/main at externally reviewed 908cb967afd9162e3a9be78d71cd13c477be4ffe.
 
 The JavaScript/CommonJS patient domain adds explicit PATIENT_BACKEND=legacy|postgres selection, requiring PostgreSQL authentication and organizations for PostgreSQL patient mode. Missing/auto/incompatible settings fail closed. There is no Mongo fallback, production switch, automatic dual write or full historical backfill.
 

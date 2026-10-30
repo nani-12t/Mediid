@@ -8,11 +8,61 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import api from '../../utils/api';
+import api, { appointmentAPI } from '../../utils/api';
+import AppointmentReschedule from '../../components/common/AppointmentReschedule';
 import toast from 'react-hot-toast';
 import { io } from 'socket.io-client';
 
+// PostgreSQL scheduling remains separate from the deferred clinical portal.
 export default function DoctorDashboard() {
+  const [backend, setBackend] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    appointmentAPI.getConfig().then(({ data }) => {
+      if (!['legacy', 'postgres'].includes(data.backend)) throw new Error('Invalid configuration');
+      setBackend(data.backend);
+    }).catch(() => setError('Appointments are temporarily unavailable. Please retry.'));
+  }, []);
+  if (error) return <main><p role="alert">{error}</p></main>;
+  if (!backend) return <main>Loading appointments...</main>;
+  return backend === 'postgres' ? <DoctorScheduling /> : <LegacyDoctorDashboard />;
+}
+
+function DoctorScheduling() {
+  const { logout } = useAuth();
+  const [appointments, setAppointments] = useState([]);
+  const [error, setError] = useState('');
+  const load = async () => {
+    try { const { data } = await appointmentAPI.getDoctorAppointments(); setAppointments(data); setError(''); }
+    catch (err) { setAppointments([]); setError(err.response?.data?.message || 'Appointments are temporarily unavailable.'); }
+  };
+  useEffect(() => { load(); const timer = setInterval(load, 15000); return () => clearInterval(timer); }, []);
+  const update = async (appointment, status) => {
+    try { await appointmentAPI.updateStatus(appointment._id, { status }); await load(); }
+    catch (err) { setError(err.response?.data?.message || 'Appointment update failed.'); }
+  };
+  return <main style={{ padding: 24 }}>
+    <h1>My appointments</h1><button onClick={load}>Refresh</button><button onClick={logout}>Sign out</button>
+    <p>Appointment scheduling is available. Clinical records and prescribing are reserved for a later phase.</p>
+    {error && <p role="alert">{error}</p>}
+    {!appointments.length && !error && <p>No appointments</p>}
+    {appointments.map(appointment => <article className="card" key={appointment._id}>
+      <h2>{appointment.patient?.firstName} {appointment.patient?.lastName}</h2>
+      <p>{appointment.hospital?.name} - {new Date(appointment.appointmentDate).toLocaleDateString('en-IN')} - {appointment.timeSlot}</p>
+      <p>Status: {appointment.status}</p>
+      <p>Total fee: {appointment.currency || 'INR'} {appointment.billAmount} - Amount paid: {appointment.amountPaid || '0.00'}</p>
+      {appointment.billStatus === 'deposit_paid' && <p>Deposit paid; consultation fee balance remains.</p>}
+      {appointment.hospital?.type === 'clinic' && !['cancelled', 'completed', 'expired'].includes(appointment.status) && <>
+        <AppointmentReschedule appointment={appointment} onChanged={load} />
+        <button onClick={() => { if (window.confirm('Cancel this appointment?')) update(appointment, 'cancelled'); }}>Cancel appointment</button>
+      </>}
+      {appointment.status === 'confirmed' && <button onClick={async () => { try { await appointmentAPI.checkIn(appointment._id); await load(); } catch (err) { setError(err.response?.data?.message || 'Check-in failed.'); } }}>Check in</button>}
+      {appointment.status === 'checked_in' && <button onClick={() => update(appointment, 'completed')}>Mark completed</button>}
+    </article>)}
+  </main>;
+}
+
+function LegacyDoctorDashboard() {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState(null);

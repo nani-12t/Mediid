@@ -182,3 +182,10 @@ During Stage D:
 The frozen UUIDv5 namespace remains 57c0c744-9cdc-41f9-a532-7e60be63d87f. Preserve public MEDIID UIDs separately from internal UUIDs. Historical appointments without reliable times remain in legacy appointments; do not infer timestamps from display strings or create fictitious slots. Reliable historical domain imports can use immutable legacySourceId plus legacyImportedAt only through the reviewed migration writer.
 
 For an empty PostgreSQL database, apply both committed Phase 1.3.1 migrations in order. The second contains essential checks, GiST exclusion, triggers and partial indexes. Provision pgvector and btree_gist first. An existing populated target requires separate reviewed reconciliation/backfill and conflict audits. No production migration or data copying occurred. See backend/prisma/SQL_CONSTRAINTS.md. Phase 2.1 is not started.
+
+
+## Phase 2.5 runtime forward migration (2026-10-30)
+
+Deploy 202610300001_phase25_appointments_scheduler after the ten reviewed historical migrations with the separate migrator credential. Historical SQL remains unchanged. The migration adds starts_at and unique appointment-domain links to consultation_sessions, durable notification claims, narrow scheduling/finance/materialization/window functions and a membership deletion guard. Duplicate historical consultation links fail deployment for explicit review rather than being silently removed.
+
+New operational bookings use only hospital_appointments or private_clinic_appointments with valid organization, materialized interval and retained numbered reservation. This phase does not backfill Mongo history or populate BillingRecord/clinical records. PostgreSQL timezone conversion, frozen policy/deadline triggers, financial allocation and append-only history remain authoritative. Runtime gets scoped EXECUTE grants without direct reservation/finance/clinical writes. Configuration, tests and limitations: backend/prisma/APPOINTMENTS.md.

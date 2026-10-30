@@ -5,27 +5,34 @@
  * Route: /confirm-appointment/:token
  *
  * It calls the public backend endpoint GET /api/appointments/confirm/:token
- * which sets status=confirmed, then shows the result.
+ * PostgreSQL links record acknowledgement; provider/payment confirmation remains separate.
  */
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { appointmentAPI } from '../../utils/api';
 
 export default function ConfirmAppointment() {
   const { token } = useParams();
   const [state, setState] = useState('loading'); // loading | success | already | cancelled | error
-  const [details, setDetails] = useState(null);
+  const [details, setDetails] = useState('');
 
   useEffect(() => {
     const confirm = async () => {
       try {
-        const res  = await fetch(`${process.env.REACT_APP_API_URL || '/api'}/appointments/confirm/${token}`);
-        const html = await res.text();
-        // The backend returns HTML directly — we parse status from the content
-        if (html.includes('Already Confirmed'))  { setState('already');   return; }
-        if (html.includes('Appointment Confirmed')) { setState('success'); return; }
-        if (html.includes('Cancelled'))           { setState('cancelled'); return; }
-        if (html.includes('Invalid'))             { setState('error');     return; }
-        setState('success');
+        const { data: config } = await appointmentAPI.getConfig();
+        if (!['legacy', 'postgres'].includes(config.backend)) throw new Error('Appointment configuration is unavailable.');
+        const { data } = await appointmentAPI.confirmLink(token);
+        if (config.backend === 'postgres') {
+          if (typeof data !== 'object' || typeof data.message !== 'string') throw new Error('Invalid acknowledgement response.');
+          setDetails(data.message);
+          setState('acknowledged');
+          return;
+        }
+        if (typeof data !== 'string') throw new Error('Invalid confirmation response.');
+        if (data.includes('Already Confirmed')) { setState('already'); return; }
+        if (data.includes('Appointment Confirmed')) { setState('success'); return; }
+        if (data.includes('Cancelled')) { setState('cancelled'); return; }
+        setState('error');
       } catch {
         setState('error');
       }
@@ -41,6 +48,15 @@ export default function ConfirmAppointment() {
     <div style={wrap}><div style={card}>
       <div style={{ fontSize:40, marginBottom:16 }}>⏳</div>
       <p style={{ fontSize:16, color:'#374151' }}>Confirming your appointment...</p>
+    </div></div>
+  );
+
+  if (state === 'acknowledged') return (
+    <div style={wrap}><div style={card}>
+      <h2>Appointment acknowledged</h2>
+      <p>{details}</p>
+      <p>View your appointments for payment and final confirmation status.</p>
+      <Link to="/appointments" style={btn}>View My Appointments</Link>
     </div></div>
   );
 

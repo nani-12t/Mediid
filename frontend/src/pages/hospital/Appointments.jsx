@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import HospitalLayout from '../../components/common/HospitalLayout';
 import { appointmentAPI } from '../../utils/api';
+import AppointmentReschedule from '../../components/common/AppointmentReschedule';
 import toast from 'react-hot-toast';
 
 /* ─── constants ─── */
@@ -37,6 +38,8 @@ const POLL_INTERVAL = 15000; // 15 s auto-refresh
 /* ═══════════════════════════════════════════════════ */
 export default function HospitalAppointments() {
   const [appointments, setAppointments]   = useState([]);
+  const [backend, setBackend] = useState(null);
+  const [error, setError] = useState('');
   const [filter, setFilter]               = useState('pending');
   const [search, setSearch]               = useState('');
   const [loading, setLoading]             = useState(true);
@@ -64,6 +67,10 @@ export default function HospitalAppointments() {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
+      setError('');
+      const { data: config } = await appointmentAPI.getConfig();
+      if (!['legacy', 'postgres'].includes(config.backend)) throw new Error('Appointment configuration is unavailable.');
+      setBackend(config.backend);
       const params = filter !== 'all' ? { status: filter } : {};
       const { data } = await appointmentAPI.getHospitalAppointments(params);
       setAppointments(data);
@@ -78,7 +85,7 @@ export default function HospitalAppointments() {
         setNewCount(n => n + added);
         toast(`🔔 ${added} new appointment request${added > 1 ? 's' : ''}!`, { icon: '🏥', duration: 4000 });
         // Browser notification if allowed
-        if (Notification.permission === 'granted') {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           new Notification('MediID – New Appointment', {
             body: `${added} new appointment request${added > 1 ? 's' : ''} received`,
             icon: '/favicon.ico',
@@ -88,7 +95,7 @@ export default function HospitalAppointments() {
       prevCount.current = current;
       setPendingCount(current);
     } catch (e) {
-      if (!silent) console.error(e);
+      setError(e.response?.data?.message || 'Appointments are temporarily unavailable.'); setAppointments([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -109,7 +116,7 @@ export default function HospitalAppointments() {
 
   /* ── ask for browser notification permission ── */
   useEffect(() => {
-    if (Notification.permission === 'default') {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, []);
@@ -125,14 +132,13 @@ export default function HospitalAppointments() {
     try {
       await appointmentAPI.updateStatus(confirmModal._id, {
         status: 'confirmed',
-        timeSlot: confirmSlot || confirmModal.timeSlot,
-        appointmentDate: confirmDate || confirmModal.appointmentDate,
+        ...(backend === 'legacy' ? { timeSlot: confirmSlot || confirmModal.timeSlot, appointmentDate: confirmDate || confirmModal.appointmentDate } : {}),
         staffNotes: confirmNote,
       });
-      toast.success('✅ Appointment confirmed — SMS sent to patient');
+      toast.success(backend === 'postgres' ? 'Appointment confirmed' : '✅ Appointment confirmed — SMS sent to patient');
       setConfirmModal(null);
       load(false);
-    } catch { toast.error('Action failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
   };
 
   const handleReject = async () => {
@@ -141,11 +147,12 @@ export default function HospitalAppointments() {
       await appointmentAPI.updateStatus(rejectModal._id, {
         status: 'cancelled',
         staffNotes: rejectReason,
+        ...(backend === 'postgres' ? { reason: rejectReason } : {}),
       });
-      toast.success('Appointment rejected — patient notified by SMS');
+      toast.success(backend === 'postgres' ? 'Appointment cancelled' : 'Appointment rejected — patient notified by SMS');
       setRejectModal(null);
       load(false);
-    } catch { toast.error('Action failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
   };
 
   const handleComplete = async (id) => {
@@ -153,7 +160,7 @@ export default function HospitalAppointments() {
       await appointmentAPI.updateStatus(id, { status: 'completed' });
       toast.success('Marked as completed');
       load(false);
-    } catch { toast.error('Action failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
   };
 
   /* ── filter ── */
@@ -178,6 +185,7 @@ export default function HospitalAppointments() {
   /* ─────────────────────────────────────── */
   return (
     <HospitalLayout title="Appointments">
+      {error && <p role="alert">{error}</p>}
 
       {/* ── Header ── */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:12 }}>
@@ -233,7 +241,7 @@ export default function HospitalAppointments() {
           {search && <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--gray-400)' }}><X size={14} /></button>}
         </div>
         <div className="tabs" style={{ marginBottom:0 }}>
-          {['pending','confirmed','completed','cancelled','all'].map(s => (
+          {(backend === 'postgres' ? ['pending','confirmed','checked_in','completed','cancelled','expired','all'] : ['pending','confirmed','completed','cancelled','all']).map(s => (
             <button key={s} className={`tab-btn ${filter === s ? 'active' : ''}`} onClick={() => setFilter(s)} style={{ textTransform:'capitalize', position:'relative' }}>
               {s}
               {s === 'pending' && pendingCount > 0 && (
@@ -332,10 +340,11 @@ export default function HospitalAppointments() {
 
                   {/* Actions */}
                   <td>
-                    {apt.status === 'pending' && (
+                    {(['pending', 'reminder_sent'].includes(apt.status)) && (
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                         <button
                           style={{ background:'#d1fae5', color:'#065f46', border:'none', borderRadius:6, padding:'5px 10px', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}
+                          disabled={backend === 'postgres' && apt.appointmentChannel !== 'OFFLINE' && apt.confirmationMode !== 'MANUAL'}
                           onClick={() => { setConfirmModal(apt); setConfirmSlot(apt.timeSlot||''); setConfirmDate(apt.appointmentDate?.split('T')[0]||''); setConfirmNote(''); }}
                         >
                           <CheckCircle size={12} /> Confirm
@@ -348,7 +357,7 @@ export default function HospitalAppointments() {
                         </button>
                       </div>
                     )}
-                    {apt.status === 'confirmed' && (
+                    {((backend === 'legacy' && apt.status === 'confirmed') || (backend === 'postgres' && apt.status === 'checked_in')) && (
                       <button
                         style={{ background:'#eff6ff', color:'#1d4ed8', border:'none', borderRadius:6, padding:'5px 10px', fontSize:12, fontWeight:600, cursor:'pointer' }}
                         onClick={() => handleComplete(apt._id)}
@@ -356,6 +365,9 @@ export default function HospitalAppointments() {
                         🏁 Complete
                       </button>
                     )}
+                    {backend === 'postgres' && !['cancelled', 'completed', 'expired'].includes(apt.status) && <AppointmentReschedule appointment={apt} onChanged={() => load(false)} />}
+                    {backend === 'postgres' && ['confirmed', 'checked_in'].includes(apt.status) && <button onClick={() => { setRejectModal(apt); setRejectReason(''); }}>Cancel appointment</button>}
+                    {backend === 'postgres' && apt.status === 'confirmed' && <button onClick={async () => { try { await appointmentAPI.checkIn(apt._id); await load(false); } catch (err) { toast.error(err.response?.data?.message || 'Check-in failed'); } }}>Check in</button>}
                   </td>
                 </tr>
               ))}
@@ -379,9 +391,9 @@ export default function HospitalAppointments() {
             </div>
             <div style={mBody}>
               <div style={{ background:'#f0fdf4', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#166534' }}>
-                📱 An SMS + WhatsApp will be sent to the patient on confirmation.
+                📱 The patient will be notified after successful confirmation.
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              {backend === 'legacy' && <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                 <div>
                   <label style={fLabel}>Confirm Date</label>
                   <input className="form-input" type="date"
@@ -395,7 +407,8 @@ export default function HospitalAppointments() {
                     {['09:00 AM','09:30 AM','10:00 AM','10:30 AM','11:00 AM','11:30 AM','12:00 PM','02:00 PM','02:30 PM','03:00 PM','03:30 PM','04:00 PM','04:30 PM','05:00 PM'].map(t => <option key={t}>{t}</option>)}
                   </select>
                 </div>
-              </div>
+              </div>}
+              {backend === 'postgres' && <p>Confirm the existing reserved slot. Use Reschedule appointment to choose another materialized slot.</p>}
               <div>
                 <label style={fLabel}>Note to Patient (optional)</label>
                 <textarea className="form-input" rows={2} style={{ resize:'none' }}
@@ -423,7 +436,7 @@ export default function HospitalAppointments() {
           <div style={modalBox}>
             <div style={mHead}>
               <div>
-                <h3 style={{ fontSize:17, fontWeight:700, color:'#111827', marginBottom:3 }}>Reject Appointment</h3>
+                <h3 style={{ fontSize:17, fontWeight:700, color:'#111827', marginBottom:3 }}>{backend === 'postgres' ? 'Cancel Appointment' : 'Reject Appointment'}</h3>
                 <p style={{ fontSize:13, color:'#9ca3af' }}>
                   {rejectModal.patient?.firstName} {rejectModal.patient?.lastName}
                 </p>
@@ -435,7 +448,7 @@ export default function HospitalAppointments() {
                 ⚠️ The patient will receive an SMS notifying them of the cancellation.
               </div>
               <div>
-                <label style={fLabel}>Reason for rejection <span style={{ color:'#e53e3e' }}>*</span></label>
+                <label style={fLabel}>{backend === 'postgres' ? 'Cancellation reason' : 'Reason for rejection'} <span style={{ color:'#e53e3e' }}>*</span></label>
                 <textarea className="form-input" rows={3} style={{ resize:'none' }}
                   placeholder="e.g. Doctor unavailable on this date, please rebook..."
                   value={rejectReason} onChange={e => setRejectReason(e.target.value)} />
@@ -448,7 +461,7 @@ export default function HospitalAppointments() {
               </button>
               <button onClick={handleReject} disabled={!rejectReason.trim()}
                 style={{ flex:2, padding:'11px 0', borderRadius:10, border:'none', background: rejectReason.trim() ? '#ef4444' : '#fca5a5', fontSize:14, fontWeight:600, color:'#fff', cursor: rejectReason.trim() ? 'pointer' : 'not-allowed' }}>
-                ❌ Reject & Notify Patient
+                {backend === 'postgres' ? 'Cancel & Notify Patient' : '❌ Reject & Notify Patient'}
               </button>
             </div>
           </div>

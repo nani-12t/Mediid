@@ -11,6 +11,8 @@ let marketplaceConnection;
 let authRuntime;
 let organizationRuntime;
 let patientRuntime;
+let appointmentRuntime;
+const {createAppointmentRuntime}=require('./src/appointments/runtime');
 const {createPatientRuntime}=require('./src/patients/runtime');
 const {createOrganizationRuntime}=require('./src/organizations/runtime');
 const {startAuthRuntime}=require('./src/auth/runtime');
@@ -21,6 +23,8 @@ async function startServer() {
   authRuntime=await startAuthRuntime();
   organizationRuntime=createOrganizationRuntime(authRuntime);
   patientRuntime=createPatientRuntime(authRuntime,organizationRuntime);
+  appointmentRuntime=createAppointmentRuntime(authRuntime,organizationRuntime,patientRuntime);
+  await appointmentRuntime.start();
 
 
   // Robust CORS configuration for Vercel/Production
@@ -60,7 +64,7 @@ async function startServer() {
       callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-Mediid-CSRF'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-Mediid-CSRF', 'Idempotency-Key'],
     credentials: true,
     optionsSuccessStatus: 204
   }));
@@ -88,6 +92,12 @@ async function startServer() {
       (error,req,res,next)=>res.status(error?.type==='entity.too.large'||error?.type==='parameters.too.many'?413:400)
         .set('Cache-Control','no-store').json({code:'PATIENT_INPUT',message:'Invalid patient request.'}));
   }
+  if (appointmentRuntime.mode === 'postgres') {
+    app.use('/api/appointments',express.json({limit:'32kb'}),
+      express.urlencoded({extended:false,limit:'32kb',parameterLimit:40}),
+      (error,req,res,next)=>res.status(error?.type==='entity.too.large'||error?.type==='parameters.too.many'?413:400)
+        .set('Cache-Control','no-store').json({code:'APPOINTMENT_INPUT',message:'Invalid appointment request.'}));
+  }
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -112,7 +122,12 @@ async function startServer() {
     app.use('/api/doctors', require('./routes/doctors'));
     app.use('/api/staff', require('./routes/staff'));
   }
-  app.use('/api/appointments', require('./routes/appointments'));
+  app.get('/api/appointments/config',(req,res)=>res.set('Cache-Control','no-store').json({backend:appointmentRuntime.mode}));
+  if(appointmentRuntime.mode==='postgres') {
+    app.use('/api/appointments',require('./src/appointments/http').createAppointmentRouter(authRuntime,appointmentRuntime.service));
+  } else {
+    app.use('/api/appointments',require('./routes/appointments'));
+  }
   app.use('/api/insurance', require('./routes/insurance'));
   app.use('/api/reports', require('./routes/reports'));
   app.use('/api/ocr', require('./routes/ocr'));
@@ -155,16 +170,18 @@ async function startServer() {
 
   const { initSocket } = require('./utils/socket');
   if(authRuntime.mode==='legacy')initSocket(server); // PG sockets await session-aware business authorization.
-  const { initScheduler } = require('./utils/scheduler');
-  initScheduler();
-  for (const signal of ['SIGTERM','SIGINT']) process.once(signal, async()=>{server.close();await authRuntime.stop();await Promise.allSettled([mongoose.disconnect(),marketplaceConnection?.close()]);process.exit(0);});
+  if(appointmentRuntime.mode==='legacy') {
+    const {initScheduler}=require('./utils/scheduler');
+    initScheduler();
+  }
+  for (const signal of ['SIGTERM','SIGINT']) process.once(signal, async()=>{server.close();await appointmentRuntime.stop();await authRuntime.stop();await Promise.allSettled([mongoose.disconnect(),marketplaceConnection?.close()]);process.exit(0);});
   console.log('MediID Server running on port ' + server.address().port);
 
 }
 
 startServer().catch(async (error) => {
   console.error('MediID startup failed:', error.name==='AuthError'?'Authentication is unavailable.':error.message);
-  await Promise.allSettled([authRuntime?.stop(), mongoose.disconnect(), marketplaceConnection?.close()]);
+  await Promise.allSettled([appointmentRuntime?.stop(),authRuntime?.stop(), mongoose.disconnect(), marketplaceConnection?.close()]);
   process.exitCode = 1;
 });
 

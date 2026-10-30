@@ -443,7 +443,7 @@ All Node backend implementation remains JavaScript/CommonJS under the externally
 
 ## ADR-019: Patient Demographics, Emergency Identity and Trusted Preferences
 
-**Status:** Implemented and tested for Phase 2.4; pending external review.
+**Status:** COMPLETE; externally reviewed at c14a2a21dd72776d69d08d7fa24d4be4863b62f5.
 **Date:** 2026-10-28
 
 Patient demographics, emergency identity and benefits use the existing Patient, PatientBenefit, PatientTrustedDoctor and PatientTrustedHospital models. The explicit PATIENT_BACKEND=postgres option requires reviewed PostgreSQL auth and organization modes; no silent Mongo fallback or production cutover is introduced. All implementation remains JavaScript/CommonJS.
@@ -459,3 +459,21 @@ Public emergency scan accepts only canonical public MID values, requires an acti
 Protected SQL functions recheck current active patient role, ownership and matching User/Patient UID. User-first locking and merge-after-lock partial updates preserve unrelated concurrent fields; auth_profiles.safe_profile is rebuilt transactionally from only safe identity, names and phone. Benefits retain exact PostgreSQL Decimal values and use owner-scoped soft deletion. New integrity checks are forward-only and NOT VALID for deployment compatibility with historical imports, while still enforcing new/changed rows. Runtime receives narrow EXECUTE permissions and no new broad private/clinical/billing/research table access.
 
 See backend/prisma/PATIENTS.md for the API, configuration, identifier mapping, HMAC and deferred-domain contracts.
+
+
+## ADR-020: Operational Appointments, Financial Holds and Consultation Windows
+
+**Status:** Phase 2.5 implementation; external review pending.
+**Baseline:** c14a2a21dd72776d69d08d7fa24d4be4863b62f5 (externally reviewed Phase 2.4).
+
+Operational PostgreSQL scheduling is explicitly selected with APPOINTMENT_BACKEND and requires the reviewed PostgreSQL auth, organization and patient domains. Legacy Mongo remains the explicit default deployment example. No fallback, dual write, production cutover, or later-phase API is introduced.
+
+Materialization requires active template AND active doctor AND active organization AND current explicit membership. PostgreSQL IANA conversion and exclusion constraints arbitrate repeated/concurrent workers. primaryHospitalId, clinic ownership and patient-trusted-provider preferences do not substitute for membership. Membership removal conflicts with active future bookings and blocks unused future slots.
+
+Each private-clinic practitioner controls only their own appointments/calendar/policy. There is no clinic receptionist. Hospital front desk is limited to the active owning hospital_admin or an explicitly linked active hospital_staff whose HospitalStaff role is exactly receptionist in that non-clinic hospital. Support scheduling is attributable and obeys policies, holds, capacity and cutoffs; support receives no EHR or health-adjacent symptoms/notes.
+
+Patient acknowledgement is distinct from final provider confirmation. Required capture controls DEPOSIT; the distributed scheduler controls TIME_BASED at the configured lead; authorized front desk controls MANUAL. Private-clinic online capture requires exactly 50%. Payment adapter operations use persisted idempotency, and late capture is retained/refunded without reclaiming a released seat. Provider cancellation guarantees a full refund unless the patient explicitly approves transfer. Runtime cannot edit retained financial history directly.
+
+Appointment confirmation does not immediately unlock EHR. One internal ConsultationSession carries startsAt = slotStart - 10 minutes and expiresAt = slotStart + 2 hours, with scheduled/active/completed/expired lifecycle. Phase 2.6 will authorize clinical access using authenticated actor, appointment context and this inclusive-start/exclusive-end window. Possessing an internal session token never substitutes for authentication.
+
+BullMQ and explicit secure Redis provide materialization, expiry, confirmation, reminders, reconciliation, refunds and window jobs with lifecycle cleanup and no process-local timer fallback. Raw public confirmation credentials reach notification delivery only; SQL stores SHA-256 digests and Redis limits use HMAC dimensions. AppointmentPayment/AppointmentRefund/AppointmentFinancialEvent are an appointment ledger, separate from Phase 2.8 unified billing. See backend/prisma/APPOINTMENTS.md.

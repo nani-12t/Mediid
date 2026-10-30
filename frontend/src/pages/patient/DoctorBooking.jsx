@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { 
   ArrowLeft, Star, CheckCircle2, Video, Home, 
@@ -20,6 +20,8 @@ export default function DoctorBooking() {
   const [doctor, setDoctor] = useState(null);
   const [hospital, setHospital] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [backend, setBackend] = useState(null);
+  const [configError, setConfigError] = useState('');
 
   // Booking state
   const [consultType, setConsultType] = useState(typeParam === 'video' ? 'video' : 'consultation');
@@ -31,6 +33,7 @@ export default function DoctorBooking() {
   const [availableSlots, setAvailableSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState('');
+  const slotRequest = useRef(0);
 
   // Set today as default date
   useEffect(() => {
@@ -41,12 +44,16 @@ export default function DoctorBooking() {
   useEffect(() => {
     const fetchDoctor = async () => {
       try {
+        const { data: config } = await appointmentAPI.getConfig();
+        if (!['legacy', 'postgres'].includes(config.backend)) throw new Error('Appointment configuration is unavailable.');
+        setBackend(config.backend);
+        if (config.backend === 'postgres') setConsultType('consultation');
         const { data } = await hospitalAPI.search({});
         let foundDoc = null;
         let foundHosp = null;
         
         for (const h of data) {
-          const d = h.doctors?.find(doc => doc._id === id);
+          const d = h.doctors?.find(doc => [doc._id, doc.id, doc.uid].includes(id));
           if (d) {
             foundDoc = d;
             foundHosp = h;
@@ -62,7 +69,7 @@ export default function DoctorBooking() {
           navigate('/search');
         }
       } catch (err) {
-        toast.error('Failed to load doctor details');
+        setConfigError('Appointment booking is temporarily unavailable. Please retry.');
       } finally {
         setLoading(false);
       }
@@ -72,28 +79,35 @@ export default function DoctorBooking() {
 
   // Fetch available time slots whenever the date changes
   useEffect(() => {
-    if (!selectedDate || !id) return;
+    if (!selectedDate || !id || !backend || !hospital) return;
     fetchSlots(selectedDate);
-  }, [selectedDate, id]);
+  }, [selectedDate, id, backend, hospital]);
 
   const fetchSlots = async (date) => {
+    if (!backend || !hospital || !doctor || !date) return;
+    const request = ++slotRequest.current;
     setSlotsLoading(true);
     setSlotsError('');
     setSelectedTime(null);
     try {
-      const { data } = await api.get(`/doctor-portal/slots/available?doctorId=${id}&date=${date}`);
-      if (data.slots && data.slots.length > 0) {
-        setAvailableSlots(data.slots);
+      const { data } = backend === 'postgres'
+        ? await appointmentAPI.getAvailability({ doctorId: doctor.id || doctor._id || doctor.uid, hospitalId: hospital.id || hospital._id || hospital.uid, date })
+        : await api.get('/doctor-portal/slots/available', { params: { doctorId: id, date } });
+      if (request !== slotRequest.current) return;
+      const slots = backend === 'postgres' ? (Array.isArray(data) ? data : data.slots || []).map(slot => ({ ...slot, time: slot.timeSlot || new Date(slot.slotStart).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: slot.timezone || 'Asia/Kolkata' }), available: slot.remainingCapacity > 0 })) : data.slots;
+      if (slots && slots.length > 0) {
+        setAvailableSlots(slots);
       } else {
         setAvailableSlots([]);
         setSlotsError(data.message || 'No slots available for this date.');
       }
     } catch (err) {
+      if (request !== slotRequest.current) return;
       // If no slots configured at all, fall back to empty with message
       setAvailableSlots([]);
       setSlotsError('No appointment slots configured for this date. Please try another day.');
     } finally {
-      setSlotsLoading(false);
+      if (request === slotRequest.current) setSlotsLoading(false);
     }
   };
 
@@ -105,7 +119,7 @@ export default function DoctorBooking() {
     
     setBooking(true);
     try {
-      await appointmentAPI.create({
+      await appointmentAPI.create(backend === 'postgres' ? { slotId: selectedTime } : {
         doctor: id,
         hospital: hospital._id,
         appointmentDate: selectedDate,
@@ -138,6 +152,7 @@ export default function DoctorBooking() {
   }
 
   if (loading) return <PatientLayout title="Loading..."><div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><div className="spinner" /></div></PatientLayout>;
+  if (configError) return <PatientLayout title="Book Appointment"><p role="alert">{configError}</p></PatientLayout>;
   if (!doctor) return null;
 
   return (
@@ -257,7 +272,7 @@ export default function DoctorBooking() {
             <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--gray-900)', marginBottom: 20 }}>Schedule Consultation</h2>
             
             {/* ── Consultation Type Selector ── */}
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ marginBottom: 20 }} hidden={backend === 'postgres'}>
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Appointment Type</p>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button 
@@ -339,12 +354,13 @@ export default function DoctorBooking() {
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                   {availableSlots.map(slot => {
-                    const isSelected = selectedTime === slot.time;
+                    const selection = backend === 'postgres' ? slot.id : slot.time;
+                    const isSelected = selectedTime === selection;
                     const isFull = !slot.available;
                     return (
                       <button
-                        key={slot.time}
-                        onClick={() => !isFull && setSelectedTime(slot.time)}
+                        key={slot.id || slot.time}
+                        onClick={() => !isFull && setSelectedTime(selection)}
                         disabled={isFull}
                         style={{
                           padding: '10px 4px', borderRadius: 10, cursor: isFull ? 'not-allowed' : 'pointer', fontSize: 11, fontWeight: 700, textAlign: 'center',
@@ -358,6 +374,7 @@ export default function DoctorBooking() {
                           <Clock size={9} /> {slot.time}
                         </div>
                         {isFull && <div style={{ fontSize: 9, marginTop: 2 }}>Full</div>}
+                        {backend === 'postgres' && <div style={{ fontSize: 9, marginTop: 2 }}>{slot.remainingCapacity} seats available</div>}
                         {!isFull && slot.booked > 0 && <div style={{ fontSize: 9, marginTop: 2, color: '#f59e0b' }}>{slot.booked}/{slot.capacity}</div>}
                       </button>
                     );
@@ -377,14 +394,14 @@ export default function DoctorBooking() {
                 cursor: !selectedTime ? 'not-allowed' : 'pointer'
               }}
             >
-              {booking ? 'Scheduling...' : consultType === 'video' ? '📹 Book Video Consultation' : '✅ Confirm Appointment'}
+              {booking ? 'Scheduling...' : backend === 'postgres' ? 'Book Appointment' : consultType === 'video' ? '📹 Book Video Consultation' : '✅ Confirm Appointment'}
             </button>
 
             {/* Consent Badge */}
             <div style={{ background: 'hsl(172, 95%, 96%)', border: '1px solid hsl(172, 95%, 90%)', padding: '14px', borderRadius: 12, display: 'flex', alignItems: 'start', gap: 10 }}>
               <ShieldCheck size={16} color="var(--teal)" style={{ marginTop: 2, flexShrink: 0 }} />
               <p style={{ fontSize: 11.5, color: 'var(--teal-dark)', fontWeight: 600, lineHeight: 1.45 }}>
-                Consent Shared: Your MediID history will decrypt for this doctor only upon appointment confirmation.
+                {backend === 'postgres' ? 'Booking does not grant access to your medical history. Payment and confirmation follow the scheduling policy of your provider.' : 'Consent Shared: Your MediID history will decrypt for this doctor only upon appointment confirmation.'}
               </p>
             </div>
           </div>

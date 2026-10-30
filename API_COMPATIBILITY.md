@@ -224,4 +224,15 @@ medicalBenefits are canonical active PatientBenefit DTOs with stable UUID _id/id
 
 Trusted-provider APIs return safe public Phase 2.3 summaries. Trusted provider != clinical consent. Public /api/patients/scan/:uid returns only UID/name and demographic emergency-card fields, requires qrActive and active linked patient identity, and uses distributed Redis rate limits. Private profile, benefits, contacts and relationship data remain owner-only.
 
-PostgreSQL document mutation, bills/payment and clinical-history routes return AUTH_DOMAIN_NOT_MIGRATED (503). Phase 2.5 appointments remain independently deferred; no compatibility claim here implements those routes.
+PostgreSQL document mutation, bills/payment and clinical-history routes return AUTH_DOMAIN_NOT_MIGRATED (503). Phase 2.5 appointments are implemented through the separate explicitly selected module described below; the patient module itself grants no scheduling or financial authority.
+
+
+## Current Phase 2.5 appointment compatibility (2026-10-30)
+
+backend/src/appointments/dto/index.js unifies new HospitalAppointment and PrivateClinicAppointment rows into the React appointment shape. _id/id are operational UUIDs, public patient/provider UIDs remain intact, nested parties and appointmentDate/timeSlot/status/bookingMethod/contact fields remain available, and finance summaries distinguish deposit_paid from full paid. Normal DTOs return confirmToken:null and never return provider transaction history, confirmation digest, policy snapshot or internal consultation token. Support/front desk DTOs omit symptoms/notes.
+
+GET /api/appointments/config exposes only backend. PostgreSQL routes are mounted exclusively when explicitly configured; legacy mode retains the existing Mongo router. GET /availability uses real materialized slot IDs/remaining capacity. POST / resolves the legacy doctor/hospital/date/time tuple only if exactly one materialized slot matches. New frontend booking sends slotId.
+
+GET /my, /hospital, /hospital/count and /doctor preserve scheduling views. PUT /:id/status allows explicit scoped transitions; date/time injection is rejected. POST /:id/reschedule takes slotId. POST /:id/check-in and DELETE /:id use current scoped authority. PUT /:id/pay retains the helper/route but requires an Idempotency-Key and invokes the secure provider service. Client fee/payment-success flags are rejected.
+
+Patients acknowledge through authenticated POST /:id/confirm. Public GET /confirm/:token remains single-use and distributed-rate-limited; acknowledgement does not bypass payment, TIME_BASED or MANUAL confirmation. Hospital polling remains supported; PostgreSQL mode enables no unauthenticated legacy sockets. Doctor scheduling metadata does not open doctor-portal patient/prescription APIs, which remain AUTH_DOMAIN_NOT_MIGRATED until Phase 2.6. Patient bills remain Phase 2.8.

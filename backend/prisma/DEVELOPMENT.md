@@ -38,8 +38,9 @@ The migration wrapper accepts only the named migration role, captures raw Prisma
 8. 202610250001_phase23_provider_hierarchy
 9. 202610280001_phase23_group_clinic_membership
 10. 202610280002_phase24_patient_demographics_benefits
+11. 202610300001_phase25_appointments_scheduler
 
-All nine previously pushed migrations remain unchanged. The fourth grants infrastructure metadata access only; the fifth adds Phase 2.2A authentication/ownership reads. The sixth adds versioned sessions and minimal patient registration; the seventh adds audited, hospital-scoped provisioning through restricted functions. The eighth establishes distinct private-clinic ownership and provider operations. The ninth adds owner-scoped group-clinic membership operations and authorizes each explicit clinic member's own recurring availability. The tenth adds actor-scoped patient demographics/benefits/preferences and the narrow public emergency-card function, with no schema-model redesign or clinical/billing grants. Its NOT VALID benefit checks protect new/updated rows while preserving historical rows for explicit reconciliation. Runtime cannot create schema objects, mutate migration history or access clinical tables. Diagnostics retains metadata-only access. See AUTH_HARDENING.md for current grants, identity reconciliation and authentication settings.
+All ten previously pushed migrations remain unchanged. The fourth grants infrastructure metadata access only; the fifth adds Phase 2.2A authentication/ownership reads. The sixth adds versioned sessions and minimal patient registration; the seventh adds audited, hospital-scoped provisioning through restricted functions. The eighth establishes distinct private-clinic ownership and provider operations. The ninth adds owner-scoped group-clinic membership operations and authorizes each explicit clinic member's own recurring availability. The tenth adds actor-scoped patient demographics/benefits/preferences and the narrow public emergency-card function, with no schema-model redesign or clinical/billing grants. Its NOT VALID benefit checks protect new/updated rows while preserving historical rows for explicit reconciliation. Runtime cannot create schema objects, mutate migration history or access clinical tables. Diagnostics retains metadata-only access. See AUTH_HARDENING.md for current grants, identity reconciliation and authentication settings.
 
 ## Lifecycle, readiness and pooling
 
@@ -62,7 +63,7 @@ On Windows with PostgreSQL 18 server headers and Visual Studio C++ Build Tools, 
     npm run check:js
     npm run test:legacy
 
-The exact gate executes all three original migration files unchanged, verifies both extensions and a real vector operator, then runs 27 schema and 70 review checks on native PostgreSQL. The concurrency suite now requires real pgvector and never removes SQL. The infrastructure suite uses Prisma to deploy all ten migrations with non-superuser migration credentials and tests real role permissions, pooling, missing/drifted migrations, connection/auth failures and client/process shutdown. Pure identifier/configuration tests are separate. Production TLS chains, managed poolers, production load and production deployment remain outside this local verification.
+The exact gate executes all three original migration files unchanged, verifies both extensions and a real vector operator, then runs 27 schema and 70 review checks on native PostgreSQL. The concurrency suite now requires real pgvector and never removes SQL. The infrastructure suite uses Prisma to deploy all eleven migrations with non-superuser migration credentials and tests real role permissions, pooling, missing/drifted migrations, connection/auth failures and client/process shutdown. Pure identifier/configuration tests are separate. Production TLS chains, managed poolers, production load and production deployment remain outside this local verification.
 
 ## Ownership and remaining security work
 

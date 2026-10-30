@@ -8,7 +8,7 @@ Set ORGANIZATION_BACKEND explicitly to legacy or postgres in the application env
 
 GET /api/organizations/config reports the selected provider backend. See .env.example and AUTH_HARDENING.md. No dependency was added or upgraded in this phase.
 
-Deploy all ten migrations in order using the separate mediid_migrator credential: the original seven, 202610250001_phase23_provider_hierarchy, the forward-only 202610280001_phase23_group_clinic_membership correction, then 202610280002_phase24_patient_demographics_benefits. All nine previously pushed migrations remain unchanged. The new patient boundary is documented in PATIENTS.md and does not alter the approved provider/group-clinic functions. The original provider migration adds the optional clinic ownership relation; the correction adds narrowly scoped membership operations and updates template authorization. The application receives only mediid_runtime credentials.
+Deploy all eleven migrations in order using the separate mediid_migrator credential: the original seven, 202610250001_phase23_provider_hierarchy, the forward-only 202610280001_phase23_group_clinic_membership correction, then 202610280002_phase24_patient_demographics_benefits and 202610300001_phase25_appointments_scheduler. All ten previously pushed migrations remain unchanged. The new patient boundary is documented in PATIENTS.md and does not alter the approved provider/group-clinic functions. The original provider migration adds the optional clinic ownership relation; the correction adds narrowly scoped membership operations and updates template authorization. The application receives only mediid_runtime credentials.
 
 Existing hospital-admin and private-doctor identities come from the reviewed identity reconciliation/operator provisioning boundary; this phase does not add public privileged account registration or a full Mongo backfill.
 
@@ -70,9 +70,9 @@ Generic updates reject immutable owner/user/UID/role/rating/sequence/private-pra
 
 RecurringAvailabilityTemplate CRUD is doctor-owned. Hospital and private-clinic contexts both require a current active explicit DoctorHospitalMembership and an active organization. An additional group-clinic doctor does not need to own the clinic to manage their own clinic-context templates. The clinic owner cannot create, update or remove another doctor's templates. After membership removal, the removed doctor cannot create or update templates for that clinic; primaryHospitalId alone grants nothing. Null context remains valid only for private-practice doctors. Another doctor, hospital admin, staff or support agent cannot edit a doctor's independent templates.
 
-Templates validate day, time range, date range, timezone, channel and numeric bounds. They are a provider foundation only. No DoctorSlot capacity engine, ScheduleOverride API, materialization worker, reservation, hold, payment deadline, appointment booking, cancellation, refund or consultation window is implemented.
+Templates validate day, time range, date range, timezone, channel and numeric bounds. They remain the provider-owned source templates. The separate Phase 2.5 appointment module now implements materialization, overrides, reservations, holds, booking and consultation windows; see APPOINTMENTS.md. Deprecated DoctorSlot never computes operational capacity.
 
-In PostgreSQL provider mode, /api/doctor-portal/slots/available and remaining queue/EHR routes return AUTH_DOMAIN_NOT_MIGRATED. Other protected unmigrated domains retain the Phase 2.2B gate. Patient longitudinal data, appointments, pharmacy, billing, marketplace and AI remain outside this phase.
+In PostgreSQL provider mode, /api/doctor-portal/slots/available and remaining queue/EHR routes return AUTH_DOMAIN_NOT_MIGRATED. Other protected unmigrated domains retain the Phase 2.2B gate. Phase 2.4 patient demographics and Phase 2.5 operational appointments are implemented separately; clinical data, pharmacy, unified billing, marketplace and AI remain outside this provider module.
 
 ## Runtime permissions and verification
 
