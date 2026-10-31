@@ -14,6 +14,8 @@ The runtime starts PostgreSQL materialization and housekeeping after BullMQ/Redi
 
 Deploy the new forward migration `202610300001_phase25_appointments_scheduler` after the ten historical migrations through the existing migrator credential. Do not replay or edit historical SQL. It adds consultation start bounds/unique appointment references, notification claims, scoped runtime operations, and the membership removal integration guard. Existing duplicate consultation references fail migration rather than being deleted.
 
+Then deploy the forward-only correction `202610310001_phase25_availability_timezone` as migration twelve. It replaces only the availability read branch and adds a private timezone resolver; the pushed Phase 2.5 migration remains unchanged.
+
 The Phase 1.3.1 booking, reservation, financial and retention triggers remain authoritative. Runtime receives narrow function execution, not direct appointment/financial/history writes. Helpers are revoked from PUBLIC, runtime and diagnostics. Existing clinical/research/billing access remains closed.
 
 ## Materialization and overrides
@@ -31,6 +33,12 @@ Membership removal shares provider locks with booking and materialization. Activ
 ## Discovery, booking and capacity
 
 `GET /api/appointments/availability?doctorId=…&hospitalId=…&date=YYYY-MM-DD` returns bounded bookable slots and remaining capacity. Public/patient discovery exposes ONLINE and FLEXIBLE. Authorized scheduling actors may request OFFLINE discovery for their scope. Provider identifiers resolve through the reviewed organization mapping rather than trusting arbitrary legacy IDs.
+
+Discovery derives its authoritative IANA timezone from active matching recurring templates in the slot's doctor/organization context. A match must cover the effective local date and weekday, exact duration and time grid, channel and capacity, and the materializer's DST roundtrip rules. Matching templates must agree on the timezone and agree with the existing legacy tuple resolver. Missing, inactive, invalid, ambiguous or inconsistent authority excludes the slot safely; discovery never guesses Asia/Kolkata.
+
+The requested `date` is the provider/template-local calendar date, independently for each slot. Each result includes `id`, `doctorId`, `hospitalId`, `slotStart`, `slotEnd`, `channel`, `capacity`, `remainingCapacity`, `timezone` and `timeSlot`. PostgreSQL supplies the authoritative IANA `timezone` and formats `timeSlot` as `HH24:MI` in that zone. A New York 23:00 slot is returned for its New York date and excluded for the adjacent India date. Clients cannot override timezone through a query parameter.
+
+PostgreSQL booking and rescheduling display those API fields directly and exclude missing/malformed timezone or local-time metadata. They book/reschedule by `slotId`; they do not convert UTC instants using browser or Kolkata defaults. Explicit legacy mode retains its existing behavior.
 
 `POST /api/appointments` prefers `slotId`. The legacy doctor/hospital/date/time tuple is accepted only when it resolves to exactly one materialized interval. Server-derived fee, deposit, deadline, snapshot, actor, seat and status fields are rejected as client input.
 

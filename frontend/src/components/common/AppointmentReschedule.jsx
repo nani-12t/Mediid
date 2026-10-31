@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { appointmentAPI } from '../../utils/api';
+import { hasProviderSlotTime } from '../../utils/appointmentAvailability';
 
 export default function AppointmentReschedule({ appointment, onChanged }) {
   const [date, setDate] = useState('');
@@ -15,7 +16,7 @@ export default function AppointmentReschedule({ appointment, onChanged }) {
         hospitalId: appointment.hospital.id || appointment.hospital._id || appointment.hospital.uid,
         date, channel: appointment.appointmentChannel === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
       });
-      const next = (Array.isArray(data) ? data : data.slots || []).filter(slot => slot.id !== appointment.slotId);
+      const next = (Array.isArray(data) ? data : data.slots || []).filter(slot => slot.id !== appointment.slotId && hasProviderSlotTime(slot));
       setSlots(next);
       if (!next.length) setError('No available slots for this date.');
     } catch (err) { setError(err.response?.data?.message || 'Availability is temporarily unavailable.'); }
@@ -34,7 +35,7 @@ export default function AppointmentReschedule({ appointment, onChanged }) {
     <button type="button" disabled={!date || busy} onClick={find}>Find available slots</button>
     {slots.length > 0 && <label>New appointment slot <select value={slotId} onChange={event => setSlotId(event.target.value)}>
       <option value="">Select a slot</option>
-      {slots.map(slot => <option key={slot.id} value={slot.id}>{slot.timeSlot || new Date(slot.slotStart).toLocaleString('en-IN', { timeZone: slot.timezone || 'Asia/Kolkata' })} ({slot.remainingCapacity} seats available)</option>)}
+      {slots.map(slot => <option key={slot.id} value={slot.id}>{slot.timeSlot} {slot.timezone} ({slot.remainingCapacity} seats available)</option>)}
     </select></label>}
     <button type="button" disabled={!slotId || busy} onClick={save}>Save reschedule</button>
     {error && <p role="alert">{error}</p>}

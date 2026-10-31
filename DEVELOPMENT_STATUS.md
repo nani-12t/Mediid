@@ -22,6 +22,43 @@ Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 | Phase 2.5 | IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW |
 | Phase 2.6 | NOT STARTED |
 
+## Phase 2.5 provider timezone correction - 2026-10-31
+
+Phase 2.5 - IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. Correction baseline: clean main and fetched origin/main at ca09530fe484d2708fa517247295712ac724e5a7. Phase 2.6 is NOT STARTED.
+
+Root cause: availability used a global Asia/Kolkata date filter even though the HTTP allowlist correctly rejected client timezone input. The response omitted timezone/timeSlot, allowing PostgreSQL frontend booking/rescheduling to format UTC using a Kolkata or browser fallback.
+
+Forward-only migration 202610310001_phase25_availability_timezone derives discovery timezone from unambiguous active matching recurring templates for the slot doctor/organization, exact local grid, duration, channel and capacity. It preserves the materializer DST roundtrip rules and requires agreement with the unchanged legacy tuple resolver. Missing, inactive, invalid, ambiguous or inconsistent timezone authority excludes the slot safely. Valid timezone names are loaded once per read; a materialized candidate query resolves each eligible slot once.
+
+Availability now filters each slot by provider-local date and returns authoritative IANA timezone plus PostgreSQL HH24:MI timeSlot alongside its existing interval, provider, capacity and channel fields. Client timezone overrides remain rejected. PostgreSQL booking/rescheduling display those fields directly and send slot IDs; missing or malformed presentation metadata is excluded. Explicit legacy behavior remains covered.
+
+Baseline defect proof executed the exact pushed read-function definition inside a disposable PostgreSQL transaction on the same connection. The genuine recurring New York 2026-11-02 23:00 slot was absent for its provider date and incorrectly present for India 2026-11-03, without timezone/timeSlot. The new provider-date assertion failed as expected; rollback restored the correction and its correct availability response. No historical SQL or migration ledger was changed.
+
+The original eleven migrations, Prisma schema, appointment booking/payment/refund/reservation/confirmation transitions, backend services/validation and dependencies remain unchanged. The correction adds no direct runtime helper grants, direct table grants, clinical authority or Phase 2.6 work.
+
+### Correction executed verification
+
+| Required check | Actual result |
+| --- | --- |
+| Prisma validation / generation; JavaScript source syntax | PASS / PASS; 53 files PASS |
+| Appointment unit / native / actual Express HTTP / real BullMQ scheduler | 15 / 40 / 15 / 10 PASS |
+| Independent native appointment races | 11 PASS; distinct actual PostgreSQL sessions verified |
+| New York 23:00 cross-date native / actual HTTP / mounted frontend | PASS / PASS / PASS; provider date included, India-only adjacent date excluded |
+| Unknown / inactive / invalid / ambiguous / conflicting timezone authority | PASS; safely excluded without fallback |
+| New York exact-one legacy tuple and availability time consistency | PASS, including the same cross-date materialized slot |
+| Original exact native schema / review / concurrency | 27 / 70 / 4 PASS |
+| Infrastructure unit / native deployment and permissions | 10 / 24 PASS; final optimized migration twelve deployed |
+| Auth unit / native; sessions / provisioning / real Redis | 31 / 39 PASS; 13 / 13 / 5 PASS |
+| Identity reconciliation / hospital_staff / actual auth HTTP | 16 / 11 / 15 PASS |
+| Organization unit / native / group clinic / actual server | 8 / 26 / 28 / 14 PASS |
+| Patient unit / native / actual server | 12 / 33 / 16 PASS |
+| Mongo/Express legacy regressions | 20 PASS |
+| All frontend tests / production build | 73 PASS across 5 suites, none skipped / PASS |
+
+The final native, actual HTTP, scheduler and infrastructure gates ran against the optimized corrective migration. Discovery evaluates the timezone catalog once per request and each candidate once, avoiding the repeated-catalog-scan timeout caught by the native gate. The mounted frontend displays 23:00 America/New_York and books {slotId: 'new-york-slot'}; rescheduling preserves that slot identity. No PostgreSQL browser/Kolkata display fallback remains.
+
+All required checks executed and passed; none skipped. Generated historical PID/migration-count evidence changes were restored and excluded. No production systems/data, real payment gateway transaction, real SMS/email, production TLS validation, load/deployment/cutover or historical backfill was executed. No dependencies or lockfiles changed. Existing fs.F_OK/Browserslist build notices remain. Phase 2.5 stays IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW; Phase 2.6 stays NOT STARTED.
+
 ## Phase 2.5 operational appointments and consultation windows - 2026-10-30
 
 Phase 2.5 - IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. Baseline: clean main and fetched origin/main at externally reviewed Phase 2.4 commit c14a2a21dd72776d69d08d7fa24d4be4863b62f5. Phase 2.6 is NOT STARTED.

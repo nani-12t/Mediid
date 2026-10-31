@@ -57,7 +57,15 @@ export async function appointmentFixture({redis:withRedis=false}={}){
   const book=async(actor,selected,input={},connection=connections[0])=>command(actor,'book',{id:newPostgresId(),reservationId:newPostgresId(),slotId:selected.id,confirmationDigest:digest(randomBytes(32).toString('base64url')),...input},connection);
   const tick=async(connection=connections[0])=>(await connection.query('SELECT public.mediid_appointment_tick() data')).rows[0].data;
   const materialize=async(days=7,connection=connections[0])=>(await connection.query('SELECT public.mediid_appointment_materialize($1::integer) data',[days])).rows[0].data;
-  const result={cluster,redis,database,credentials,password,hash,users,patients,doctors,hospitals,connections,slot,command,read,book,tick,materialize,newId:newPostgresId,close:async()=>{await redis?.stop();await cluster.stop();}};
+  async function materializedSlot({timezone='Asia/Kolkata',time='16:00',dayOffset=3,doctor_id=doctors.doctor.id,hospital_id=hospitals.hospital.id,capacity=1,channel='FLEXIBLE'}={}){
+   const coordinates=(await database.db.query("SELECT ((clock_timestamp() AT TIME ZONE $1)::date+$2::int)::text date,to_char(((clock_timestamp() AT TIME ZONE $1)::date+$2::int),'FMDAY') weekday,to_char(date '2000-01-01'+$3::time+interval '15 minutes','HH24:MI') finish",[timezone,dayOffset,time])).rows[0];
+   const template=await insert(database.db,'recurring_availability_templates',{id:newPostgresId(),doctor_id,hospital_id,day_of_week:coordinates.weekday.toUpperCase(),start_time:time,end_time:coordinates.finish,slot_duration:15,capacity_per_slot:capacity,channel,timezone,effective_from:coordinates.date,effective_until:coordinates.date,updated_at:new Date()});
+   await materialize(7);
+   const selected=(await database.db.query("SELECT s.*,($1::date)::text local_date,(s.slot_start AT TIME ZONE 'Asia/Kolkata')::date::text india_date FROM materialized_appointment_slots s WHERE doctor_id=$2 AND hospital_id=$3 AND slot_start=($1::date+$4::time) AT TIME ZONE $5 AND state='AVAILABLE'",[coordinates.date,doctor_id,hospital_id,time,timezone])).rows;
+   assert.equal(selected.length,1,'A real recurring template must materialize exactly one fixture slot.');
+   return {...selected[0],template};
+  }
+  const result={cluster,redis,database,credentials,password,hash,users,patients,doctors,hospitals,connections,slot,materializedSlot,command,read,book,tick,materialize,newId:newPostgresId,close:async()=>{await redis?.stop();await cluster.stop();}};
   return result;
  }catch(error){await redis?.stop();await cluster.stop();throw error;}
 }

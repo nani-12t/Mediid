@@ -63,7 +63,7 @@ beforeEach(() => {
   appointmentAPI.updateStatus.mockResolvedValue({ data: appointment });
   appointmentAPI.pay.mockResolvedValue({ data: { appointment } });
   appointmentAPI.reschedule.mockResolvedValue({ data: appointment });
-  appointmentAPI.getAvailability.mockResolvedValue({ data: [{ id: 'new-slot', timeSlot: '15:00', remainingCapacity: 2, channel: 'FLEXIBLE' }] });
+  appointmentAPI.getAvailability.mockResolvedValue({ data: [{ id: 'new-slot', timezone: 'Asia/Kolkata', timeSlot: '15:00', remainingCapacity: 2, channel: 'FLEXIBLE' }] });
   hospitalAPI.search.mockResolvedValue({ data: [{ ...appointment.hospital, doctors: [appointment.doctor] }] });
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.restoreAllMocks(); });
@@ -125,6 +125,49 @@ test('materialized availability drives patient booking with slotId only', async 
   expect(container.textContent).toContain('Booking does not grant access to your medical history');
 });
 
+const newYorkSlot = {
+  id: 'new-york-slot', slotStart: '2026-11-01T03:00:00.000Z', slotEnd: '2026-11-01T03:30:00.000Z',
+  timezone: 'America/New_York', timeSlot: '23:00', remainingCapacity: 1, channel: 'ONLINE',
+};
+
+test('New York cross-date booking displays authoritative 23:00 and sends only slotId', async () => {
+  appointmentAPI.getAvailability.mockResolvedValue({ data: [newYorkSlot] });
+  await mount(<DoctorBooking />);
+  const slot = button('23:00');
+  expect(slot.textContent).toContain('America/New_York');
+  expect(container.textContent).not.toContain('08:30');
+  await click(slot); await click(button('Book Appointment'));
+  expect(appointmentAPI.create).toHaveBeenCalledWith({ slotId: 'new-york-slot' });
+  expect(appointmentAPI.getAvailability.mock.calls.every(([query]) => !('timezone' in query))).toBe(true);
+});
+
+const invalidProviderTimes = [
+  ['missing timezone', { timezone: undefined }],
+  ['invalid timezone', { timezone: 'Invalid/Timezone' }],
+  ['missing timeSlot', { timeSlot: undefined }],
+  ['invalid timeSlot', { timeSlot: '24:00' }],
+];
+
+test.each(invalidProviderTimes)('PostgreSQL booking excludes a slot with %s', async (_description, invalid) => {
+  appointmentAPI.getAvailability.mockResolvedValue({ data: [{ ...newYorkSlot, ...invalid }] });
+  await mount(<DoctorBooking />);
+  expect(button('23:00')).toBeUndefined();
+  expect(button('Book Appointment').disabled).toBe(true);
+  expect(container.textContent).toContain('No slots available');
+  expect(appointmentAPI.create).not.toHaveBeenCalled();
+  expect(api.get).not.toHaveBeenCalled();
+});
+
+test('explicit legacy booking retains its supplied time without PostgreSQL timezone requirements', async () => {
+  appointmentAPI.getConfig.mockResolvedValue({ data: { backend: 'legacy' } });
+  api.get.mockResolvedValue({ data: { slots: [{ time: '15:00', available: true }] } });
+  await mount(<DoctorBooking />);
+  await click(button('15:00')); await click(button('Confirm Appointment'));
+  expect(appointmentAPI.getAvailability).not.toHaveBeenCalled();
+  expect(appointmentAPI.create).toHaveBeenCalledWith(expect.objectContaining({ doctor: 'DOC-TEST0001', timeSlot: '15:00' }));
+  expect(appointmentAPI.create.mock.calls[0][0]).not.toHaveProperty('slotId');
+});
+
 test('booking configuration outage cannot fall back to legacy slots', async () => {
   appointmentAPI.getConfig.mockRejectedValue(new Error('Unavailable'));
   await mount(<DoctorBooking />);
@@ -139,6 +182,30 @@ test('patient reschedule resolves an existing available slot and sends no arbitr
   expect(appointmentAPI.getAvailability).toHaveBeenCalledWith({ doctorId: 'doctor-id', hospitalId: 'hospital-id', date: '2099-11-01', channel: 'ONLINE' });
   await change(container.querySelector('select'), 'new-slot'); await click(button('Save reschedule'));
   expect(appointmentAPI.reschedule).toHaveBeenCalledWith('synthetic-appointment', 'new-slot');
+});
+
+test('New York cross-date rescheduling displays provider time and preserves slot identity', async () => {
+  appointmentAPI.getAvailability.mockResolvedValue({ data: [newYorkSlot] });
+  await mount(<PatientAppointments />);
+  await change(container.querySelector('input[type="date"]'), '2026-10-31');
+  await click(button('Find available slots'));
+  const option = container.querySelector('option[value="new-york-slot"]');
+  expect(option.textContent).toContain('23:00 America/New_York');
+  expect(option.textContent).not.toContain('08:30');
+  expect(appointmentAPI.getAvailability).toHaveBeenCalledWith({ doctorId: 'doctor-id', hospitalId: 'hospital-id', date: '2026-10-31', channel: 'ONLINE' });
+  await change(container.querySelector('select'), 'new-york-slot'); await click(button('Save reschedule'));
+  expect(appointmentAPI.reschedule).toHaveBeenCalledWith('synthetic-appointment', 'new-york-slot');
+});
+
+test.each(invalidProviderTimes)('PostgreSQL rescheduling excludes a slot with %s', async (_description, invalid) => {
+  appointmentAPI.getAvailability.mockResolvedValue({ data: [{ ...newYorkSlot, ...invalid }] });
+  await mount(<PatientAppointments />);
+  await change(container.querySelector('input[type="date"]'), '2026-10-31');
+  await click(button('Find available slots'));
+  expect(container.querySelector('select')).toBeNull();
+  expect(button('Save reschedule').disabled).toBe(true);
+  expect(container.textContent).toContain('No available slots');
+  expect(appointmentAPI.reschedule).not.toHaveBeenCalled();
 });
 
 test('public PostgreSQL acknowledgement does not claim final appointment confirmation', async () => {

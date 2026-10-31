@@ -8,6 +8,7 @@ import {
 import PatientLayout from '../../components/common/PatientLayout';
 import { hospitalAPI, appointmentAPI } from '../../utils/api';
 import api from '../../utils/api';
+import { hasProviderSlotTime } from '../../utils/appointmentAvailability';
 import toast from 'react-hot-toast';
 
 export default function DoctorBooking() {
@@ -94,7 +95,10 @@ export default function DoctorBooking() {
         ? await appointmentAPI.getAvailability({ doctorId: doctor.id || doctor._id || doctor.uid, hospitalId: hospital.id || hospital._id || hospital.uid, date })
         : await api.get('/doctor-portal/slots/available', { params: { doctorId: id, date } });
       if (request !== slotRequest.current) return;
-      const slots = backend === 'postgres' ? (Array.isArray(data) ? data : data.slots || []).map(slot => ({ ...slot, time: slot.timeSlot || new Date(slot.slotStart).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: slot.timezone || 'Asia/Kolkata' }), available: slot.remainingCapacity > 0 })) : data.slots;
+      const slots = backend === 'postgres'
+        ? (Array.isArray(data) ? data : data.slots || []).filter(hasProviderSlotTime)
+          .map(slot => ({ ...slot, time: slot.timeSlot, available: slot.remainingCapacity > 0 }))
+        : data.slots;
       if (slots && slots.length > 0) {
         setAvailableSlots(slots);
       } else {
@@ -373,6 +377,7 @@ export default function DoctorBooking() {
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
                           <Clock size={9} /> {slot.time}
                         </div>
+                        {backend === 'postgres' && <div style={{ fontSize: 9, marginTop: 2 }}>{slot.timezone}</div>}
                         {isFull && <div style={{ fontSize: 9, marginTop: 2 }}>Full</div>}
                         {backend === 'postgres' && <div style={{ fontSize: 9, marginTop: 2 }}>{slot.remainingCapacity} seats available</div>}
                         {!isFull && slot.booked > 0 && <div style={{ fontSize: 9, marginTop: 2, color: '#f59e0b' }}>{slot.booked}/{slot.capacity}</div>}

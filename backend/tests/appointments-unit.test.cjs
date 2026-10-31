@@ -36,7 +36,7 @@ test('legacy booking selection is bounded and requires complete exact slot coord
 });
 test('availability and appointment state inputs reject unbounded or ambiguous values',()=>{
  const base={doctorId:newPostgresId(),hospitalId:newPostgresId(),date:'2031-02-28'};assert.deepEqual(v.availability(base),base);
- for(const input of [{...base,date:'2031-02-29'},{...base,date:['2031-02-28']},{...base,patientId:newPostgresId()},{...base,channel:'FLEXIBLE'}])assert.throws(()=>v.availability(input),inputError);
+ for(const input of [{...base,date:'2031-02-29'},{...base,date:['2031-02-28']},{...base,patientId:newPostgresId()},{...base,channel:'FLEXIBLE'},{...base,timezone:'America/New_York'},{...base,timezone:'Asia/Kolkata'}])assert.throws(()=>v.availability(input),inputError);
  for(const input of [{status:'pending'},{status:'rescheduled'},{status:'confirmed',timeSlot:'14:00'},{status:'confirmed',appointmentDate:'2031-01-01'},{status:['confirmed']}])assert.throws(()=>v.status(input),inputError);
  assert.deepEqual(v.status({status:'checked_in'}),{status:'checked_in'});
 });
@@ -70,6 +70,10 @@ test('compatibility DTO differentiates partial deposit and preserves only schedu
 });
 test('availability DTO never forwards actors patients finance or reservation history',()=>{
  const raw={id:newPostgresId(),remaining_capacity:2,capacity:3,channel:'FLEXIBLE',patient_id:newPostgresId(),actor_user_id:newPostgresId(),reservations:[{private:true}],payments:[{private:true}]},dto=availabilityDTO(raw);assert.equal(dto.remainingCapacity,2);assert.deepEqual(Object.keys(dto).sort(),['capacity','channel','id','remainingCapacity']);
+});
+test('availability DTO preserves authoritative provider timezone and local time without process conversion',()=>{
+ const raw={id:newPostgresId(),doctor_id:newPostgresId(),hospital_id:newPostgresId(),slot_start:'2031-11-01T03:00:00.000Z',slot_end:'2031-11-01T03:15:00.000Z',channel:'FLEXIBLE',capacity:1,remaining_capacity:1,timezone:'America/New_York',time_slot:'23:00',reservations:[{private:true}]};
+ assert.deepEqual(availabilityDTO(raw),{id:raw.id,doctorId:raw.doctor_id,hospitalId:raw.hospital_id,slotStart:raw.slot_start,slotEnd:raw.slot_end,channel:'FLEXIBLE',capacity:1,remainingCapacity:1,timezone:'America/New_York',timeSlot:'23:00'});
 });
 test('notification delivery alone receives secret and errors cannot roll back committed booking',async()=>{
  const delivered=[],secret=randomBytes(32).toString('base64url'),notifications=new AppointmentNotifications({send:async message=>{delivered.push(message);return true;}},'https://synthetic.invalid/');

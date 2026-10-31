@@ -206,10 +206,40 @@ try{
   await f.command(u.patient0,'cancel',{id:booking.id});await f.command(u.doctor,'override',input);assert.equal((await query('SELECT state FROM materialized_appointment_slots WHERE id=$1',[slot.id])).rows[0].state,'BLOCKED');await rejected(()=>f.book(u.patient1,slot));await f.command(u.doctor,'deleteOverride',{id:input.id});assert.equal((await query('SELECT state FROM materialized_appointment_slots WHERE id=$1',[slot.id])).rows[0].state,'EXPIRED');assert.equal((await reservations(booking.id)).length,1);
  });
  await check('public availability lists online-compatible remaining capacity without private reservation data',async()=>{
-  const slot=await f.slot({capacity:2}),offline=await f.slot({channel:'OFFLINE'});await f.book(u.patient0,slot);
+  const slot=await f.materializedSlot({capacity:2}),offline=await f.materializedSlot({time:'16:30',channel:'OFFLINE'});await f.book(u.patient0,slot);
   const date=(await query("SELECT ($1::timestamptz AT TIME ZONE 'Asia/Kolkata')::date::text date",[slot.slot_start])).rows[0].date;
-  const available=await f.read(null,'availability',{doctorId:d.doctor.id,hospitalId:h.hospital.id,date}),selected=available.find(item=>item.id===slot.id);assert.equal(Number(selected.remainingCapacity),1);assert.ok(!available.some(item=>item.id===offline.id));
+  const available=await f.read(null,'availability',{doctorId:d.doctor.id,hospitalId:h.hospital.id,date}),selected=available.find(item=>item.id===slot.id);assert.equal(Number(selected.remainingCapacity),1);assert.equal(selected.timezone,'Asia/Kolkata');assert.equal(selected.timeSlot,'16:00');assert.ok(!available.some(item=>item.id===offline.id));
   for(const record of available)for(const key of ['patientId','actorUserId','confirm_token','payments','reservations','history'])assert.equal(Object.hasOwn(record,key),false,key);
+ });
+ let crossDate;
+ await check('New York 23:00 availability preserves provider date and local time across the India calendar boundary',async()=>{
+  crossDate=await f.materializedSlot({timezone:'America/New_York',time:'23:00',dayOffset:2,doctor_id:d.member.id,hospital_id:h.other.id});
+  assert.notEqual(crossDate.local_date,crossDate.india_date,'The fixture must cross an actual provider/India calendar boundary.');
+  const input={doctorId:d.member.id,hospitalId:h.other.id,date:crossDate.local_date};
+  const available=await f.read(null,'availability',input),selected=available.find(item=>item.id===crossDate.id);
+  assert.ok(selected,'Provider-local date must return the materialized New York 23:00 slot.');
+  assert.equal(selected.timezone,'America/New_York');assert.equal(selected.timeSlot,'23:00');
+  assert.equal(+new Date(selected.slotStart),+crossDate.slot_start);assert.equal(+new Date(selected.slotEnd),+crossDate.slot_end);
+  assert.equal(selected.doctorId,d.member.id);assert.equal(selected.hospitalId,h.other.id);assert.equal(selected.channel,'FLEXIBLE');assert.equal(selected.capacity,1);assert.equal(selected.remainingCapacity,1);
+  const adjacent=await f.read(null,'availability',{...input,date:crossDate.india_date});assert.ok(!adjacent.some(item=>item.id===crossDate.id),'India-only adjacent date must not return the New York slot.');
+  for(const timezone of ['Asia/Kolkata','America/New_York'])await rejected(()=>f.read(null,'availability',{...input,timezone}));
+  const booking=await f.command(u.patient0,'book',{id:f.newId(),reservationId:f.newId(),doctor:d.member.id,hospital:h.other.id,appointmentDate:input.date,timeSlot:selected.timeSlot,confirmationDigest:digest(randomBytes(32).toString('base64url'))});
+  assert.equal(booking.slot_id,crossDate.id);assert.equal(booking.time_slot,selected.timeSlot);await f.command(u.patient0,'cancel',{id:booking.id});
+ });
+ await check('availability excludes unknown inactive invalid and ambiguous template timezone without an India fallback',async()=>{
+  const input={doctorId:d.member.id,hospitalId:h.other.id,date:crossDate.local_date},includes=async()=>Boolean((await f.read(null,'availability',input)).find(item=>item.id===crossDate.id));
+  const orphan=await f.slot({doctor_id:d.member.id,hospital_id:h.other.id}),orphanDate=(await query("SELECT ($1::timestamptz AT TIME ZONE 'Asia/Kolkata')::date::text date",[orphan.slot_start])).rows[0].date;
+  assert.ok(!(await f.read(null,'availability',{...input,date:orphanDate})).some(item=>item.id===orphan.id));
+  await query('UPDATE recurring_availability_templates SET is_active=false WHERE id=$1',[crossDate.template.id]);assert.equal(await includes(),false);
+  await query("UPDATE recurring_availability_templates SET is_active=true,timezone='Invalid/Synthetic_Zone' WHERE id=$1",[crossDate.template.id]);assert.equal(await includes(),false);
+  await query("UPDATE recurring_availability_templates SET timezone='America/New_York' WHERE id=$1",[crossDate.template.id]);assert.equal(await includes(),true);
+  const utc=(await query("SELECT (slot_start AT TIME ZONE 'UTC')::date::text date,to_char(slot_start AT TIME ZONE 'UTC','FMDAY') weekday,to_char(slot_start AT TIME ZONE 'UTC','HH24:MI') start,to_char(slot_end AT TIME ZONE 'UTC','HH24:MI') finish FROM materialized_appointment_slots WHERE id=$1",[crossDate.id])).rows[0];
+  const competing=await insert(db.db,'recurring_availability_templates',{id:f.newId(),doctor_id:d.member.id,hospital_id:h.other.id,day_of_week:utc.weekday.toUpperCase(),start_time:utc.start,end_time:utc.finish,slot_duration:15,capacity_per_slot:1,channel:'FLEXIBLE',timezone:'UTC',effective_from:utc.date,effective_until:utc.date,updated_at:new Date()});
+  try{assert.equal(await includes(),false,'Two matching authoritative zones must fail safely.');}finally{await query('UPDATE recurring_availability_templates SET is_active=false WHERE id=$1',[competing.id]);}
+  assert.equal(await includes(),true);
+  const older=await insert(db.db,'recurring_availability_templates',{...competing,id:'00000000-0000-7000-8000-000000000025',is_active:false});
+  try{assert.equal(await includes(),false,'Older inactive metadata cannot disagree with legacy tuple presentation.');}finally{await query('DELETE FROM recurring_availability_templates WHERE id=$1',[older.id]);}
+  assert.equal(await includes(),true);
  });
  await check('role-specific lists isolate patients doctors and redact support symptoms and notes',async()=>{
   const booking=await f.book(u.patient0,await f.slot(),{symptoms:'Synthetic private symptom',notes:'Synthetic private note'});
@@ -273,7 +303,8 @@ try{
   await rejected(()=>f.command(u.patient0,'book',{...input,id:f.newId(),timeSlot:'00:01'}));
   const zoned=(await query("SELECT q.*,to_char(slot_start AT TIME ZONE 'America/New_York','YYYY-MM-DD') local_date,to_char(slot_start AT TIME ZONE 'America/New_York','HH24:MI') local_time FROM materialized_appointment_slots q WHERE doctor_id=$1 AND hospital_id=$2 AND state='AVAILABLE' ORDER BY slot_start LIMIT 1",[d.member.id,h.other.id])).rows[0];
   const zonedBooking=await f.command(u.patient0,'book',{...input,id:f.newId(),reservationId:f.newId(),doctor:d.member.id,hospital:h.other.id,appointmentDate:zoned.local_date,timeSlot:zoned.local_time,confirmationDigest:digest(randomBytes(32).toString('base64url'))});
-  assert.equal(zonedBooking.slot_id,zoned.id);await f.command(u.patient0,'cancel',{id:zonedBooking.id});
+  const discovered=(await f.read(null,'availability',{doctorId:d.member.id,hospitalId:h.other.id,date:zoned.local_date})).find(item=>item.id===zoned.id);
+  assert.equal(discovered.timezone,'America/New_York');assert.equal(discovered.timeSlot,zoned.local_time);assert.equal(zonedBooking.slot_id,zoned.id);assert.equal(zonedBooking.time_slot,discovered.timeSlot);await f.command(u.patient0,'cancel',{id:zonedBooking.id});
  });
  await check('membership removal racing materialization leaves no bookable orphan slots',async()=>{
   const membership=(await query('SELECT id FROM doctor_hospital_memberships WHERE doctor_id=$1 AND hospital_id=$2',[d.member.id,h.other.id])).rows[0].id;

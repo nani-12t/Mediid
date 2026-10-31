@@ -57,9 +57,20 @@ try{
   assert.equal((await api('appointments/my',{actor:null,withCookies:false})).status,401);
  });
  await check('mounted availability supports public discovery and exposes only online bookable remaining seats',async()=>{
-  const slot=await f.slot({capacity:2}),offline=await f.slot({channel:'OFFLINE'}),date=(await db.db.query("SELECT ($1::timestamptz AT TIME ZONE 'Asia/Kolkata')::date::text date",[slot.slot_start])).rows[0].date;
-  const result=await api('appointments/availability?'+new URLSearchParams({doctorId:d.doctor.uid,hospitalId:h.hospital.uid,date}),{actor:null,withCookies:false});ok(result);assert.equal(result.body.find(item=>item.id===slot.id).remainingCapacity,2);assert.ok(!result.body.some(item=>item.id===offline.id));
+  const slot=await f.materializedSlot({capacity:2}),offline=await f.materializedSlot({time:'16:30',channel:'OFFLINE'}),date=(await db.db.query("SELECT ($1::timestamptz AT TIME ZONE 'Asia/Kolkata')::date::text date",[slot.slot_start])).rows[0].date;
+  const result=await api('appointments/availability?'+new URLSearchParams({doctorId:d.doctor.uid,hospitalId:h.hospital.uid,date}),{actor:null,withCookies:false});ok(result);assert.equal(result.body.find(item=>item.id===slot.id).remainingCapacity,2);assert.equal(result.body.find(item=>item.id===slot.id).timezone,'Asia/Kolkata');assert.equal(result.body.find(item=>item.id===slot.id).timeSlot,'16:00');assert.ok(!result.body.some(item=>item.id===offline.id));
   for(const item of result.body)for(const field of ['patient','actorUserId','reservations','payments','confirmToken','symptoms'])assert.equal(Object.hasOwn(item,field),false,field);
+ });
+ await check('actual HTTP availability uses New York 23:00 provider date and rejects a client timezone override',async()=>{
+  const slot=await f.materializedSlot({timezone:'America/New_York',time:'23:00',dayOffset:2,doctor_id:d.member.id,hospital_id:h.other.id});
+  assert.notEqual(slot.local_date,slot.india_date,'Actual HTTP fixture must cross provider/India calendar dates.');
+  const input={doctorId:d.member.uid,hospitalId:h.other.uid,date:slot.local_date},route=values=>'appointments/availability?'+new URLSearchParams(values);
+  const result=await api(route(input),{actor:null,withCookies:false});ok(result);const selected=result.body.find(item=>item.id===slot.id);
+  assert.ok(selected,'HTTP provider-local date must return the New York slot.');assert.equal(selected.timezone,'America/New_York');assert.equal(selected.timeSlot,'23:00');
+  assert.equal(+new Date(selected.slotStart),+slot.slot_start);assert.equal(+new Date(selected.slotEnd),+slot.slot_end);assert.equal(selected.remainingCapacity,1);
+  assert.deepEqual(Object.keys(selected).sort(),['id','doctorId','hospitalId','slotStart','slotEnd','channel','capacity','remainingCapacity','timezone','timeSlot'].sort());
+  const adjacent=await api(route({...input,date:slot.india_date}),{actor:null,withCookies:false});ok(adjacent);assert.ok(!adjacent.body.some(item=>item.id===slot.id));
+  for(const timezone of ['Asia/Kolkata','America/New_York'])assert.equal((await api(route({...input,timezone}),{actor:null,withCookies:false})).status,400);
  });
  let clinicBooking,manualBooking,clinicPaymentKey;
  await check('mounted patient clinic booking and secure payment retain legacy DTO compatibility and deposit accounting',async()=>{
