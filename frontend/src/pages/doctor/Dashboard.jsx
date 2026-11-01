@@ -8,19 +8,20 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import api, { appointmentAPI } from '../../utils/api';
+import api, { appointmentAPI, clinicalAPI } from '../../utils/api';
 import AppointmentReschedule from '../../components/common/AppointmentReschedule';
 import toast from 'react-hot-toast';
+import ClinicalWorkspace from './ClinicalWorkspace';
 import { io } from 'socket.io-client';
 
-// PostgreSQL scheduling remains separate from the deferred clinical portal.
+// The clinical backend is explicit; errors never select the legacy portal.
 export default function DoctorDashboard() {
   const [backend, setBackend] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    appointmentAPI.getConfig().then(({ data }) => {
-      if (!['legacy', 'postgres'].includes(data.backend)) throw new Error('Invalid configuration');
-      setBackend(data.backend);
+    Promise.all([appointmentAPI.getConfig(), clinicalAPI.getConfig()]).then(([appointments, clinical]) => {
+      if (!['legacy', 'postgres'].includes(clinical.data.backend) || appointments.data.backend !== clinical.data.backend) throw new Error('Invalid configuration');
+      setBackend(clinical.data.backend);
     }).catch(() => setError('Appointments are temporarily unavailable. Please retry.'));
   }, []);
   if (error) return <main><p role="alert">{error}</p></main>;
@@ -42,8 +43,9 @@ function DoctorScheduling() {
     catch (err) { setError(err.response?.data?.message || 'Appointment update failed.'); }
   };
   return <main style={{ padding: 24 }}>
-    <h1>My appointments</h1><button onClick={load}>Refresh</button><button onClick={logout}>Sign out</button>
-    <p>Appointment scheduling is available. Clinical records and prescribing are reserved for a later phase.</p>
+    <ClinicalWorkspace onCompleted={load} />
+    <h2>My appointments</h2><button onClick={load}>Refresh</button><button onClick={logout}>Sign out</button>
+    <p>Scheduling and clinical records use separate authorization checks.</p>
     {error && <p role="alert">{error}</p>}
     {!appointments.length && !error && <p>No appointments</p>}
     {appointments.map(appointment => <article className="card" key={appointment._id}>

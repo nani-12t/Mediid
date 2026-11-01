@@ -997,6 +997,7 @@ model Encounter {
   vitals           Vital[]
   clinicalNotes    ClinicalNote[]
   conditions       Condition[]
+  allergies        Allergy[]
   prescriptions    Prescription[]
   labOrders        LabOrder[]
   imagingOrders    ImagingOrder[]
@@ -1065,6 +1066,8 @@ model Condition {
 }
 
 model Allergy {
+  encounterId String? @map("encounter_id") @db.Uuid
+  encounter Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
   id        String   @id @db.Uuid
   patientId String   @map("patient_id") @db.Uuid
   substance String   @db.VarChar(255)
@@ -1441,8 +1444,12 @@ model BreakGlassEvent {
 }
 
 model AccessLog {
+  resourceType String? @map("resource_type") @db.VarChar(64)
+  resourceId String? @map("resource_id") @db.Uuid
+  purpose String? @db.VarChar(64)
+  accessBasis String? @map("access_basis") @db.VarChar(32)
   id            String   @id @db.Uuid
-  patientId     String   @map("patient_id") @db.Uuid
+  patientId     String?   @map("patient_id") @db.Uuid
   doctorId      String?  @map("doctor_id") @db.Uuid
   appointmentId              String?                   @map("appointment_id") @db.Uuid
   hospitalAppointmentId      String?                   @map("hospital_appointment_id") @db.Uuid
@@ -1454,7 +1461,7 @@ model AccessLog {
   reason                     String?
   accessedAt                 DateTime                  @default(now()) @map("accessed_at") @db.Timestamptz(6)
 
-  patient                  Patient                    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient                  Patient?                   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   doctor                   Doctor?                    @relation(fields: [doctorId], references: [id], onDelete: SetNull)
   appointment              Appointment?               @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   hospitalAppointment      HospitalAppointment?      @relation(fields: [hospitalAppointmentId], references: [id], onDelete: SetNull)

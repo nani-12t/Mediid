@@ -463,7 +463,7 @@ See backend/prisma/PATIENTS.md for the API, configuration, identifier mapping, H
 
 ## ADR-020: Operational Appointments, Financial Holds and Consultation Windows
 
-**Status:** Phase 2.5 implementation; external review pending.
+**Status:** Phase 2.5 COMPLETE; externally reviewed including timezone correction at 1251d57953ff8a93e2fa633a93cd3e836b082a0e.
 **Baseline:** c14a2a21dd72776d69d08d7fa24d4be4863b62f5 (externally reviewed Phase 2.4).
 
 Operational PostgreSQL scheduling is explicitly selected with APPOINTMENT_BACKEND and requires the reviewed PostgreSQL auth, organization and patient domains. Legacy Mongo remains the explicit default deployment example. No fallback, dual write, production cutover, or later-phase API is introduced.
@@ -477,3 +477,22 @@ Patient acknowledgement is distinct from final provider confirmation. Required c
 Appointment confirmation does not immediately unlock EHR. One internal ConsultationSession carries startsAt = slotStart - 10 minutes and expiresAt = slotStart + 2 hours, with scheduled/active/completed/expired lifecycle. Phase 2.6 will authorize clinical access using authenticated actor, appointment context and this inclusive-start/exclusive-end window. Possessing an internal session token never substitutes for authentication.
 
 BullMQ and explicit secure Redis provide materialization, expiry, confirmation, reminders, reconciliation, refunds and window jobs with lifecycle cleanup and no process-local timer fallback. Raw public confirmation credentials reach notification delivery only; SQL stores SHA-256 digests and Redis limits use HMAC dimensions. AppointmentPayment/AppointmentRefund/AppointmentFinancialEvent are an appointment ledger, separate from Phase 2.8 unified billing. See backend/prisma/APPOINTMENTS.md.
+
+## ADR-021: Operational EHR Access and Encounter-Centered Clinical Writes
+
+**Status:** Phase 2.6 implementation; external review pending.
+**Baseline:** 1251d57953ff8a93e2fa633a93cd3e836b082a0e (externally reviewed Phase 2.5 and timezone correction).
+
+The JavaScript/CommonJS clinical module explicitly selects CLINICAL_BACKEND=legacy|postgres. PostgreSQL requires all four upstream PostgreSQL domains; legacy clinical routing cannot be combined with PostgreSQL authentication. Only one doctor portal mounts, and no PostgreSQL failure falls back to Mongo.
+
+Phase 2.6 activates exactly PATIENT_SELF and ACTIVE_CONSULTATION. Patient self-access checks current active role, ownership and matching public UID. Doctor access checks current active User/Doctor, the exact operational appointment/session domain, active organization, current explicit membership and database-clock inclusive-start/exclusive-end bounds. Stored windows remain slotStart - 10 minutes and slotStart + 2 hours. A consultation token is internal and never an authentication credential or response field.
+
+Trusted provider != EHR permission. Consent row != active permission yet. AccessGrant row != active permission yet. BreakGlassEvent row != active permission yet. These workflows remain deferred until separately reviewed. Hospital admin != doctor; receptionist != clinician; clinic owner != another doctor's clinical authority. Buyer/research/pharmacy and support identities receive no direct EHR authority.
+
+Clinical writes derive patient, doctor, organization, author and lifecycle fields from the current encounter context. Parent appointment locking serializes operational encounter start: create zero, reuse one, conflict on unexpected multiplicity. The Phase 1.3.1 historical/direct multiplicity contract and original clinical-context serialization remain unchanged. A forward guard blocks scheduling completion while care remains in_progress; clinical completion atomically completes encounter/appointment/session. Completed encounters reject normal further writes.
+
+Narrow SECURITY DEFINER entrypoints append AccessLog for clinical authorization decisions, return denials rather than raising away their audit row, and permit only scoped runtime EXECUTE. Audit resource/purpose/basis columns are nullable for historical compatibility; unresolved denied targets use nullable patientId with NONE basis and no invented resource UUID. Logs are append-only. Authority locks plus pre/post-mutation database-time checks prevent cached membership or expired care from authorizing writes.
+
+Clinical facts remain canonical Encounter/Vital/ClinicalNote/Condition/Allergy/Prescription/PrescriptionItem/MedicalDocument rows. New allergies carry nullable-schema but mandatory-operational encounter provenance. Structured prescription items commit atomically and create neither dispensing nor unified billing. Patient profile history/documents/clinical emergency arrays are bounded read-only adapters, not duplicate Patient storage. Public scans and auth profiles remain narrow.
+
+Document writes register validated HTTPS metadata for already-hosted objects, never binary/base64 uploads or server fetches. Withdrawal, clinician document writes, amendments, consent/break-glass activation, diagnostics, AI, full backfill and production cutover remain deferred. Phase 2.7 dispensing, Phase 2.8 billing and Phase 2.9 marketplace are not started. See backend/prisma/CLINICAL_RECORDS.md.

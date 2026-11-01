@@ -109,3 +109,9 @@ From backend, run:
     npm run test:patients:http
 
 Rerun the required native schema/review/concurrency, infrastructure, auth/session/Redis/provisioning/reconciliation/staff/HTTP, organization/group-clinic/server and legacy suites, then frontend tests/build. All data/services must be synthetic and disposable. Independent native PostgreSQL connections are required for patient-patch, duplicate doctor/hospital trust and ownership-isolation race evidence; PGlite is not concurrency evidence. Actual executed results, limitations and external-review status are recorded in DEVELOPMENT_STATUS.md.
+
+## Phase 2.6 composition amendment
+
+When explicitly configured with the full PostgreSQL clinical stack, server profile GET/PUT now compose bounded canonical medicalHistory/documents and read-only derived clinical emergency arrays through audited PATIENT_SELF access. The standalone demographics service and its Aadhaar/benefit/trust/auth-presentation rules are unchanged. No duplicate clinical JSON is stored on Patient.
+
+POST /api/patients/documents registers validated HTTPS metadata for the current patient, without encounter association, local binary/base64 upload, server-side URL fetch or hosting integration. Document deletion/withdrawal and billing remain unavailable. Public scan remains the exact narrow Phase 2.4 card. Existing trust/Consent/AccessGrant/BreakGlassEvent rows do not authorize EHR. See CLINICAL_RECORDS.md for current configuration, history pagination, metadata and deferred boundaries.

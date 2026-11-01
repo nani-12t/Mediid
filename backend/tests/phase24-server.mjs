@@ -46,10 +46,10 @@ try{
  const pair=generateKeyPairSync('rsa',{modulusLength:2048}),origin='https://patient-http-synthetic.invalid',env={};
  for(const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','USERPROFILE'])if(process.env[key])env[key]=process.env[key];
  Object.assign(env,{
-  NODE_ENV:'test',HOST:'127.0.0.1',PORT:String(await freePort()),AUTH_BACKEND:'postgres',ORGANIZATION_BACKEND:'postgres',PATIENT_BACKEND:'postgres',APPOINTMENT_BACKEND:'legacy',
+  NODE_ENV:'test',HOST:'127.0.0.1',PORT:String(await freePort()),AUTH_BACKEND:'postgres',ORGANIZATION_BACKEND:'postgres',PATIENT_BACKEND:'postgres',APPOINTMENT_BACKEND:'postgres',CLINICAL_BACKEND:'postgres',
   PATIENT_AADHAAR_HASH_KEY:randomBytes(32).toString('hex'),PATIENT_SCAN_WINDOW_MS:'60000',PATIENT_SCAN_SOURCE_MAX:'1000',PATIENT_SCAN_IDENTITY_MAX:'1000',
   MONGO_URI:mongo.getUri('phase24_http_synthetic'),MARKETPLACE_URI:mongo.getUri('phase24_marketplace_synthetic'),DOTENV_CONFIG_PATH:path.join(cluster.root,'absent.env'),PG_ENV_FILE:path.join(cluster.root,'absent.env'),
-  PG_RUNTIME_URL:database.url('mediid_runtime',credentials.mediid_runtime),AUTH_REDIS_URL:redis.url,AUTH_RATE_KEY_SECRET:randomBytes(32).toString('hex'),
+  PG_RUNTIME_URL:database.url('mediid_runtime',credentials.mediid_runtime),AUTH_REDIS_URL:redis.url, APPOINTMENT_REDIS_URL:redis.url, APPOINTMENT_QUEUE_NAMESPACE:'regression-24', APPOINTMENT_MATERIALIZE_DAYS_AHEAD:'7', APPOINTMENT_SCHEDULER_INTERVAL_MS:'60000',AUTH_RATE_KEY_SECRET:randomBytes(32).toString('hex'),
   AUTH_RATE_LOGIN_SOURCE_MAX:'1000',AUTH_RATE_LOGIN_IDENTITY_MAX:'100',AUTH_RATE_REGISTER_SOURCE_MAX:'100',AUTH_RATE_REGISTER_IDENTITY_MAX:'100',
   AUTH_ALLOWED_ORIGINS:origin,CLIENT_URL:origin,AUTH_COOKIE_SAME_SITE:'lax',AUTH_JWT_ISSUER:'phase24-http-synthetic',AUTH_JWT_AUDIENCE:'phase24-http-api',AUTH_JWT_KEY_ID:'phase24-http-key',AUTH_JWT_TTL_SECONDS:'900',AUTH_BCRYPT_COST:'12',AUTH_RESET_TTL_SECONDS:'900',
   AUTH_JWT_PRIVATE_KEY:pair.privateKey.export({type:'pkcs8',format:'pem'}),AUTH_JWT_PUBLIC_KEY:pair.publicKey.export({type:'spki',format:'pem'}),
@@ -110,8 +110,10 @@ try{
   }
   for(const table of ['consents','access_grants','encounters'])assert.equal((await database.db.query('SELECT count(*)::int n FROM '+table)).rows[0].n,0);
  });
- await check('all deferred document bill clinical and appointment routes explicitly fail closed without Mongo fallback',async()=>{
-  const requests=[['POST','patients/documents'],['DELETE','patients/documents/'+mongoPatientId],['GET','patients/bills'],['POST','patients/bills'],['PUT','patients/bills/SYNTHETIC-BILL/pay'],['GET','appointments/my']];
+ await check('document validation deferred removal and billing remain closed while own appointment reads are explicit',async()=>{
+  const malformed=await api('patients/documents',{method:'POST',token,body:{synthetic:true}});assert.equal(malformed.status,400);assert.equal(malformed.body.code,'CLINICAL_INPUT');
+  const appointments=await api('appointments/my',{token});ok(appointments);assert.deepEqual(appointments.body,[]);
+  const requests=[['DELETE','patients/documents/'+mongoPatientId],['GET','patients/bills'],['POST','patients/bills'],['PUT','patients/bills/SYNTHETIC-BILL/pay']];
   for(const [method,route]of requests){const result=await api(route,{method,token,...(method==='POST'||method==='PUT'?{body:{synthetic:true}}:{})});assert.equal(result.status,503,route);assert.equal(result.body.code,'AUTH_DOMAIN_NOT_MIGRATED',route);}
  });
  await check('mounted patient routes reject authority injection wrong origins unauthenticated and oversize JSON or form payloads',async()=>{
@@ -127,7 +129,7 @@ try{
   const scan=await api('patients/scan/MID-MONGO001',{withCookies:false});assert.equal(scan.status,404);assert.equal(scan.body.code,'PATIENT_NOT_FOUND');
  });
  await check('explicit legacy combination still mounts the existing Mongo patient route',async()=>{
-  const candidate={...env,PORT:String(await freePort()),AUTH_BACKEND:'legacy',ORGANIZATION_BACKEND:'legacy',PATIENT_BACKEND:'legacy',APPOINTMENT_BACKEND:'legacy'};delete candidate.PATIENT_AADHAAR_HASH_KEY;
+  const candidate={...env,PORT:String(await freePort()),AUTH_BACKEND:'legacy',ORGANIZATION_BACKEND:'legacy',PATIENT_BACKEND:'legacy',APPOINTMENT_BACKEND:'legacy',CLINICAL_BACKEND:'legacy'};delete candidate.PATIENT_AADHAAR_HASH_KEY;
   const legacy=launch(candidate);await ready(legacy);const legacyBase='http://127.0.0.1:'+candidate.PORT+'/api/';
   const config=await api('patients/config',{baseUrl:legacyBase,withCookies:false});ok(config);assert.deepEqual(config.body,{backend:'legacy'});
   const result=await api('patients/scan/MID-MONGO001',{baseUrl:legacyBase,withCookies:false});ok(result);assert.equal(result.body.name,'Mongo Only Synthetic');await stop(legacy);

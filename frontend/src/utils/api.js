@@ -433,4 +433,18 @@ export const pharmacyPortalAPI = {
   dispensePrescription: (data) => api.post('/pharmacy-portal/dispense', data)
 };
 
+export const clinicalAPI = {
+  getConfig: () => api.get('/clinical/config'),
+  doctorQueue: () => api.get('/doctor-portal/queue'),
+  ehr: (uid, params = {}) => api.get('/doctor-portal/patient/' + encodeURIComponent(uid), { params }),
+  startEncounter: appointmentId => api.post('/doctor-portal/encounters/start', { appointmentId }),
+  completeEncounter: id => api.post('/doctor-portal/encounters/' + id + '/complete', {}),
+  addVital: (id, data) => api.post('/doctor-portal/encounters/' + id + '/vitals', data),
+  addNote: (id, data) => api.post('/doctor-portal/encounters/' + id + '/notes', data),
+  addCondition: (id, data) => api.post('/doctor-portal/encounters/' + id + '/conditions', data),
+  addAllergy: (id, data) => api.post('/doctor-portal/encounters/' + id + '/allergies', data),
+  prescription: data => api.post('/doctor-portal/prescription', data),
+  selfEncounters: (params = {}) => api.get('/clinical/me/encounters', { params }),
+};
+
 export default api;

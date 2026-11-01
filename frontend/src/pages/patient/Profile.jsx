@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { User, Shield, FileText, Upload, Trash2, Plus, X, Heart, Phone, AlertCircle, CheckCircle, File, Clock } from 'lucide-react';
 import PatientLayout from '../../components/common/PatientLayout';
 import { patientAPI } from '../../utils/api';
+import PatientClinicalHistory, { DocumentRegistration } from './ClinicalHistory';
+import { DocumentLinks } from '../../components/clinical/ClinicalRecord';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -462,6 +464,7 @@ export default function PatientProfile() {
       {!backend && !backendError && <p role="status">Loading patient information...</p>}
 
       <div className="tabs">
+        {isPostgres && <TabButton label="Clinical History" active={tab === 'history'} onClick={() => setTab('history')} />}
         <TabButton label="🚨 Emergency Info" active={tab === 'emergency'} onClick={() => setTab('emergency')} />
         <TabButton label="📄 Documents"       active={tab === 'documents'} onClick={() => setTab('documents')} />
         <TabButton label="🏛️ Medical Benefits"  active={tab === 'benefits'}  onClick={() => setTab('benefits')} />
@@ -496,7 +499,7 @@ export default function PatientProfile() {
             <AlertCircle size={16} color="#e11d48" />
             <p style={{ fontSize: 13, color: '#9f1239' }}>{isPostgres ? 'Your active emergency QR card shares your name, blood group, emergency contact and organ-donor choice. Aadhaar and benefit details are not included.' : 'Your emergency information is visible when your QR is scanned. Review the information you choose to provide.'}</p>
           </div>
-          {isPostgres && <p role="note" style={{ marginBottom: 16 }}>Allergies, chronic conditions and medications belong to the future longitudinal clinical record and cannot be saved here yet.</p>}
+          {isPostgres && <p role="note" style={{ marginBottom: 16 }}>Allergies, active conditions and medications are derived from clinician records and are read-only here.</p>}
           <fieldset disabled={!canMutate} style={{ border: 0, padding: 0, margin: 0 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="form-group">
@@ -519,7 +522,7 @@ export default function PatientProfile() {
               <input className="form-input" disabled={isPostgres} placeholder="Penicillin, Peanuts, Latex" value={emergency.allergies} onChange={e => setEmergency({ ...emergency, allergies: e.target.value })} />
             </div>
             <div className="form-group">
-              <label className="form-label">Chronic Conditions</label>
+              <label className="form-label">{isPostgres ? 'Active Conditions' : 'Chronic Conditions'}</label>
               <input className="form-input" disabled={isPostgres} placeholder="Diabetes Type 2, Hypertension" value={emergency.chronicConditions} onChange={e => setEmergency({ ...emergency, chronicConditions: e.target.value })} />
             </div>
             <div className="form-group">
@@ -550,7 +553,13 @@ export default function PatientProfile() {
       )}
 
       {/* ═══════ Documents ═══════ */}
-      {tab === 'documents' && (
+      {tab === 'history' && isPostgres && <PatientClinicalHistory medicalHistory={patient?.medicalHistory} />}
+
+      {tab === 'documents' && (isPostgres ? <div>
+        <DocumentRegistration onAdded={async () => { const { data } = await patientAPI.getProfile(); setPatient(data); }} />
+        <h3>Medical document references</h3>
+        {patient?.documents?.length ? <DocumentLinks documents={patient.documents} /> : <p>No document references registered.</p>}
+      </div> : (
         <div>
           {isPostgres && <p role="note" className="card">Medical document uploads and deletion will be available in the future clinical record phase. They cannot be saved here yet.</p>}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
@@ -633,7 +642,7 @@ export default function PatientProfile() {
             );
           })()}
         </div>
-      )}
+      ))}
 
       {/* ═══════ Medical Benefits ═══════ */}
       {tab === 'benefits' && (

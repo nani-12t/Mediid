@@ -107,9 +107,9 @@ test('PostgreSQL profile renders safe emergency fields and presence without pref
 test('PostgreSQL emergency save sends only demographic fields and leaves the stored identifier untouched when blank', async () => {
   await mount();
   expect(input('Allergies').disabled).toBe(true);
-  expect(input('Chronic Conditions').disabled).toBe(true);
+  expect(input('Active Conditions').disabled).toBe(true);
   expect(input('Current Medications').disabled).toBe(true);
-  expect(container.textContent).toContain('future longitudinal clinical record');
+  expect(container.textContent).toContain('derived from clinician records');
   await change(input('Emergency Contact Name'), 'Replacement Contact');
   await click(button('Save Emergency Info'));
   expect(patientAPI.updateProfile).toHaveBeenCalledWith({
@@ -187,17 +187,13 @@ test('PostgreSQL blank optional dates and amounts are omitted and reversed valid
   }
 });
 
-test('PostgreSQL documents show an explicit deferred message and cannot upload or claim success', async () => {
-  await mount();
-  await click(button('Documents'));
-  expect(container.textContent).toContain('future clinical record phase');
-  const uploads = Array.from(container.querySelectorAll('button')).filter(item => /Upload/i.test(item.textContent));
-  expect(uploads).toHaveLength(2);
-  expect(uploads.every(item => item.disabled)).toBe(true);
-  await click(uploads[0]);
+test('PostgreSQL documents allow HTTPS metadata while local upload and deletion stay unavailable', async () => {
+  await mount(); await click(button('Documents'));
+  expect(container.textContent).toContain('Local file upload and document deletion are unavailable.');
+  expect(container.querySelector('input[type="file"]')).toBeNull();
+  expect(button('Upload Document')).toBeUndefined();
   expect(patientAPI.addDocument).not.toHaveBeenCalled();
   expect(patientAPI.deleteDocument).not.toHaveBeenCalled();
-  expect(toast.success).not.toHaveBeenCalled();
 });
 
 test.each(['unknown', null])('unknown patient configuration %s fails closed without loading profile or enabling mutations', async backend => {

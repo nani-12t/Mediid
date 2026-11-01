@@ -55,18 +55,18 @@ try {
   const env = {};
   for (const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','USERPROFILE']) if (process.env[key]) env[key] = process.env[key];
   Object.assign(env, {
-    NODE_ENV:'test', HOST:'127.0.0.1', PORT:String(await freePort()), AUTH_BACKEND:'postgres', ORGANIZATION_BACKEND:'postgres', PATIENT_BACKEND:'legacy',APPOINTMENT_BACKEND:'legacy',
+    NODE_ENV:'test', HOST:'127.0.0.1', PORT:String(await freePort()), AUTH_BACKEND:'postgres', ORGANIZATION_BACKEND:'postgres',PATIENT_BACKEND:'postgres',APPOINTMENT_BACKEND:'postgres',CLINICAL_BACKEND:'postgres',
     MONGO_URI:mongo.getUri('phase23_http_synthetic'), MARKETPLACE_URI:mongo.getUri('phase23_marketplace_synthetic'),
     DOTENV_CONFIG_PATH:path.join(cluster.root,'absent.env'), PG_ENV_FILE:path.join(cluster.root,'absent.env'),
-    PG_RUNTIME_URL:database.url('mediid_runtime',credentials.mediid_runtime), AUTH_REDIS_URL:redis.url,
-    AUTH_RATE_KEY_SECRET:randomBytes(32).toString('hex'), AUTH_RATE_LOGIN_SOURCE_MAX:'100', AUTH_RATE_PROVISION_SOURCE_MAX:'100',
+    PG_RUNTIME_URL:database.url('mediid_runtime',credentials.mediid_runtime), AUTH_REDIS_URL:redis.url, APPOINTMENT_REDIS_URL:redis.url, APPOINTMENT_QUEUE_NAMESPACE:'regression-23', APPOINTMENT_MATERIALIZE_DAYS_AHEAD:'7', APPOINTMENT_SCHEDULER_INTERVAL_MS:'60000',
+    PATIENT_AADHAAR_HASH_KEY:randomBytes(32).toString('hex'), AUTH_RATE_KEY_SECRET:randomBytes(32).toString('hex'), AUTH_RATE_LOGIN_SOURCE_MAX:'100', AUTH_RATE_PROVISION_SOURCE_MAX:'100',
     AUTH_ALLOWED_ORIGINS:origin, CLIENT_URL:origin, AUTH_COOKIE_SAME_SITE:'lax', AUTH_JWT_ISSUER:'phase23-http-synthetic',
     AUTH_JWT_AUDIENCE:'phase23-http-synthetic-api', AUTH_JWT_KEY_ID:'phase23-http-key', AUTH_JWT_TTL_SECONDS:'900',
     AUTH_BCRYPT_COST:'12', AUTH_RESET_TTL_SECONDS:'900', AUTH_JWT_PRIVATE_KEY:pair.privateKey.export({type:'pkcs8',format:'pem'}),
     AUTH_JWT_PUBLIC_KEY:pair.publicKey.export({type:'spki',format:'pem'}), SMTP_HOST:'127.0.0.1', SMTP_PORT:'587',
     SMTP_USER:'synthetic', SMTP_PASS:randomBytes(32).toString('hex'), SMTP_FROM:'synthetic@example.invalid', REDIS_HOST:'127.0.0.1', REDIS_PORT:'1'
   });
-  secrets.push(password, hash, migrationUrl, env.PG_RUNTIME_URL, redis.url, env.AUTH_JWT_PRIVATE_KEY, env.SMTP_PASS, env.AUTH_RATE_KEY_SECRET, ...Object.values(credentials));
+  secrets.push(password, hash, migrationUrl, env.PG_RUNTIME_URL, redis.url, env.AUTH_JWT_PRIVATE_KEY, env.SMTP_PASS, env.AUTH_RATE_KEY_SECRET, env.PATIENT_AADHAAR_HASH_KEY, ...Object.values(credentials));
   const server = launch(env), deadline = Date.now() + 60000;
   while (!server.output.includes('Server running on port')) {
     if (server.child.exitCode !== null || Date.now() > deadline) throw new Error('Synthetic provider server startup failed: ' + redact(server.output));
@@ -145,9 +145,10 @@ try {
     const result=await api('hospitals/'+mongoHospitalId.toHexString()); assert.equal(result.status,404); assert.equal(result.body.code,'ORG_NOT_FOUND');
     assert.equal((await api('hospitals/'+newPostgresId())).status,404);
   });
-  await check('unmigrated schedule, clinical and patient mutation routes remain closed', async () => {
-    for(const route of ['doctor-portal/slots/available','doctor-portal/queue']) { const result=await api(route,{token:doctorToken}); assert.equal(result.status,503); assert.equal(result.body.code,'AUTH_DOMAIN_NOT_MIGRATED'); }
-    const result=await api('patients/profile',{method:'PUT',token:adminToken,body:{firstName:'Forbidden'}}); assert.equal(result.status,503); assert.equal(result.body.code,'AUTH_DOMAIN_NOT_MIGRATED');
+  await check('legacy virtual slots remain closed while clinical queue and patient role boundaries are explicit', async () => {
+    const slots=await api('doctor-portal/slots/available',{token:doctorToken});assert.equal(slots.status,404);assert.equal(slots.body.code,'CLINICAL_NOT_FOUND');
+    const queue=await api('doctor-portal/queue',{token:doctorToken});ok(queue);assert.deepEqual(queue.body.appointments,[]);
+    const result=await api('patients/profile',{method:'PUT',token:adminToken,body:{firstName:'Forbidden'}});assert.equal(result.status,403);assert.equal(result.body.code,'PATIENT_FORBIDDEN');
   });
   await check('provider request limits cover both JSON and URL-encoded body formats', async () => {
     const json=await api('hospitals/admin/profile',{method:'PUT',token:adminToken,body:{name:'x'.repeat(270000)}}); assert.equal(json.status,413);

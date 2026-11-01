@@ -12,7 +12,9 @@ let authRuntime;
 let organizationRuntime;
 let patientRuntime;
 let appointmentRuntime;
+let clinicalRuntime;
 const {createAppointmentRuntime}=require('./src/appointments/runtime');
+const {createClinicalRuntime}=require('./src/clinical/runtime');
 const {createPatientRuntime}=require('./src/patients/runtime');
 const {createOrganizationRuntime}=require('./src/organizations/runtime');
 const {startAuthRuntime}=require('./src/auth/runtime');
@@ -24,6 +26,7 @@ async function startServer() {
   organizationRuntime=createOrganizationRuntime(authRuntime);
   patientRuntime=createPatientRuntime(authRuntime,organizationRuntime);
   appointmentRuntime=createAppointmentRuntime(authRuntime,organizationRuntime,patientRuntime);
+  clinicalRuntime=createClinicalRuntime(authRuntime,organizationRuntime,patientRuntime,appointmentRuntime);
   await appointmentRuntime.start();
 
 
@@ -98,6 +101,12 @@ async function startServer() {
       (error,req,res,next)=>res.status(error?.type==='entity.too.large'||error?.type==='parameters.too.many'?413:400)
         .set('Cache-Control','no-store').json({code:'APPOINTMENT_INPUT',message:'Invalid appointment request.'}));
   }
+  if(clinicalRuntime.mode==='postgres') {
+    app.use(['/api/doctor-portal','/api/clinical'],express.json({limit:'256kb'}),
+      express.urlencoded({extended:false,limit:'256kb',parameterLimit:100}),
+      (error,req,res,next)=>res.status(error?.type==='entity.too.large'||error?.type==='parameters.too.many'?413:400)
+        .set('Cache-Control','no-store').json({code:'CLINICAL_INPUT',message:'Invalid clinical request.'}));
+  }
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -110,7 +119,7 @@ async function startServer() {
   }
   app.get('/api/patients/config',(req,res)=>res.set('Cache-Control','no-store').json({backend:patientRuntime.mode}));
   if (patientRuntime.mode === 'postgres') {
-    app.use('/api/patients',require('./src/patients/http').createPatientRouter(authRuntime,patientRuntime.service));
+    app.use('/api/patients',require('./src/patients/http').createPatientRouter(authRuntime,patientRuntime.service,{clinical:clinicalRuntime.service}));
   } else {
     app.use('/api/patients',require('./routes/patients'));
   }
@@ -132,11 +141,15 @@ async function startServer() {
   app.use('/api/reports', require('./routes/reports'));
   app.use('/api/ocr', require('./routes/ocr'));
   app.use('/api/hospital-admin', require('./routes/hospitalAdmin'));
-  if (organizationRuntime.mode === 'postgres') {
-    // Only the provider template routes above are migrated. No virtual capacity or EHR fallback.
-    app.use('/api/doctor-portal',(req,res)=>res.status(503).json({code:'AUTH_DOMAIN_NOT_MIGRATED',message:'This account is not available in this service yet.'}));
-  } else {
+  app.get('/api/clinical/config',(req,res)=>res.set('Cache-Control','no-store').json({backend:clinicalRuntime.mode}));
+  if(clinicalRuntime.mode==='postgres') {
+    const clinicalHttp=require('./src/clinical/http');
+    app.use('/api/doctor-portal',clinicalHttp.createDoctorClinicalRouter(authRuntime,clinicalRuntime.service));
+    app.use('/api/clinical',clinicalHttp.createClinicalRouter(authRuntime,clinicalRuntime.service));
+  } else if(authRuntime.mode==='legacy'&&organizationRuntime.mode==='legacy') {
     app.use('/api/doctor-portal',require('./routes/doctorPortal'));
+  } else {
+    app.use('/api/doctor-portal',(req,res)=>res.status(503).json({code:'AUTH_DOMAIN_NOT_MIGRATED',message:'This account is not available in this service yet.'}));
   }
   app.use('/api/pharmacy-portal', require('./routes/pharmacyPortal'));
   app.use('/api/marketplace', require('./routes/marketplace'));

@@ -111,3 +111,9 @@ BullMQ schedules rolling materialization, hold expiry/TIME_BASED confirmation, c
 Commands: `test:appointments:unit`, `test:appointments`, `test:appointments:http`, `test:appointments:scheduler`, plus the existing full regression gate. Native tests require independent PostgreSQL connections and exact deployed migrations; scheduler/HTTP tests use disposable Redis and MongoDB as appropriate. Actual results are recorded in DEVELOPMENT_STATUS.md; a required unexecuted test is not a pass.
 
 Phase 2.6 EHR/encounters/notes/vitals/prescriptions/documents/consent APIs, Phase 2.8 unified BillingRecord/patient bills, historical backfill, production cutover/deployment, real gateway transactions and real SMS are deferred.
+
+## Phase 2.6 clinical lifecycle integration
+
+The forward 202611010001_phase26_clinical_records migration preserves both pushed Phase 2.5 migrations and the frozen consultation window. It adds operational clinical access through exact active consultation/current membership and an appointment completion guard: scheduling cannot mark an appointment completed while an Encounter is in_progress. Clinical completion first completes the encounter, then atomically completes that same appointment and session.
+
+There is no global one-encounter constraint. New runtime start uses appointment locking and idempotent reuse, with reconciliation conflict on unexpected multiplicity. All clinical facts remain in Encounter-centered tables; billing/dispensing and consultation-token authentication remain deferred. See CLINICAL_RECORDS.md.

@@ -41,7 +41,7 @@ try {
   mongo = await MongoMemoryServer.create({ binary: { version: '7.0.30', downloadDir: path.resolve('.test-data/mongodb-binaries') }, instance: { ip: '127.0.0.1' } });
   source = await mongoose.createConnection(mongo.getUri('mediid_http_synthetic'), { autoIndex: false }).asPromise();
   const password = 'SyntheticHttpPassword123!', hash = await bcrypt.hash(password, 8);
-  await source.collection('users').insertOne({ email: 'mongo-only@example.invalid', password: hash, role: 'patient', isActive: true, createdAt: new Date() });
+  await source.collection('users').insertOne({ email: 'mongo-only@example.invalid', uid:'MID-HTTPMAP1', password: hash, role: 'patient', isActive: true, createdAt: new Date() });
   const originalMongoCount = await source.collection('users').countDocuments();
   let expectedMongoCount = originalMongoCount;
   const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -51,11 +51,11 @@ try {
   const env = {};
   for (const key of ['PATH', 'Path', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE']) if (process.env[key]) env[key] = process.env[key];
   Object.assign(env, {
-    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(await port()), AUTH_BACKEND: 'postgres', ORGANIZATION_BACKEND: 'legacy', PATIENT_BACKEND: 'legacy', APPOINTMENT_BACKEND: 'legacy',
+    NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(await port()), AUTH_BACKEND: 'postgres', ORGANIZATION_BACKEND:'postgres',PATIENT_BACKEND:'postgres',APPOINTMENT_BACKEND:'postgres',CLINICAL_BACKEND:'postgres',
     MONGO_URI: mongo.getUri('mediid_http_synthetic'), MARKETPLACE_URI: mongo.getUri('marketplace_http_synthetic'),
     DOTENV_CONFIG_PATH: path.join(cluster.root, 'absent.env'), PG_ENV_FILE: path.join(cluster.root, 'absent.env'),
-    PG_RUNTIME_URL: database.url('mediid_runtime', credentials.mediid_runtime), AUTH_REDIS_URL: redis.url,
-    AUTH_RATE_KEY_SECRET: randomBytes(32).toString('hex'), AUTH_RATE_LOGIN_SOURCE_MAX: '100', AUTH_RATE_LOGIN_IDENTITY_MAX: '5',
+    PG_RUNTIME_URL: database.url('mediid_runtime', credentials.mediid_runtime), AUTH_REDIS_URL: redis.url, APPOINTMENT_REDIS_URL:redis.url, APPOINTMENT_QUEUE_NAMESPACE:'regression-22b', APPOINTMENT_MATERIALIZE_DAYS_AHEAD:'7', APPOINTMENT_SCHEDULER_INTERVAL_MS:'60000',
+    PATIENT_AADHAAR_HASH_KEY:randomBytes(32).toString('hex'), AUTH_RATE_KEY_SECRET: randomBytes(32).toString('hex'), AUTH_RATE_LOGIN_SOURCE_MAX: '100', AUTH_RATE_LOGIN_IDENTITY_MAX: '5',
     AUTH_ALLOWED_ORIGINS: allowedOrigin, CLIENT_URL: allowedOrigin, AUTH_COOKIE_SAME_SITE: 'lax',
     AUTH_JWT_ISSUER: 'mediid-http-synthetic', AUTH_JWT_AUDIENCE: 'mediid-http-synthetic-api',
     AUTH_JWT_KEY_ID: 'synthetic-http-key', AUTH_JWT_TTL_SECONDS: '900', AUTH_BCRYPT_COST: '12', AUTH_RESET_TTL_SECONDS: '900',
@@ -63,7 +63,7 @@ try {
     SMTP_HOST: '127.0.0.1', SMTP_PORT: '587', SMTP_USER: 'synthetic', SMTP_PASS: randomBytes(32).toString('hex'), SMTP_FROM: 'synthetic@example.invalid',
     REDIS_HOST: '127.0.0.1', REDIS_PORT: '1'
   });
-  const secrets = [password, hash, privatePem, migrationUrl, env.PG_RUNTIME_URL, redis.url, env.SMTP_PASS, env.AUTH_RATE_KEY_SECRET, ...Object.values(credentials)];
+  const secrets = [password, hash, privatePem, migrationUrl, env.PG_RUNTIME_URL, redis.url, env.SMTP_PASS, env.AUTH_RATE_KEY_SECRET, env.PATIENT_AADHAAR_HASH_KEY, ...Object.values(credentials)];
   const redact = value => secrets.reduce((text, secret) => text.replaceAll(secret, '[redacted]'), String(value));
   child = spawn(process.execPath, [path.resolve('server.js')], { cwd: process.cwd(), env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   child.stdout.on('data', value => { output = redact((output + value).slice(-20000)); });
@@ -153,13 +153,14 @@ try {
     assert.ok(cookie.includes('Secure')); assert.ok(cookie.includes('HttpOnly')); assert.ok(cookie.includes('SameSite=None'));
     await new Promise(resolve => secureServer.close(resolve)); secureServer = null;
   });
-  await check('PostgreSQL login/me work and still-Mongo unlinked business routes return safe 503', async () => {
+  await check('PostgreSQL login me and own profile work while deferred pharmacy remains safely isolated', async () => {
     loggedIn = await api('auth/login', { method: 'POST', body: { email: 'httppatient@example.invalid', password } });
     assert.equal(loggedIn.status, 200);
     assert.equal((await api('auth/me', { token: loggedIn.body.token })).status, 200);
     const profile = await api('patients/profile', { token: loggedIn.body.token });
-    assert.equal(profile.status, 503); assert.equal(profile.body.code, 'AUTH_DOMAIN_NOT_MIGRATED');
-    assert.deepEqual(Object.keys(profile.body).sort(), ['code', 'message']);
+    assert.equal(profile.status,200);assert.equal(profile.body.uid,registered.body.profile.uid);assert.deepEqual(profile.body.medicalHistory,[]);
+    const deferred=await api('pharmacy-portal/prescription/'+profile.body.uid,{token:loggedIn.body.token});
+    assert.equal(deferred.status,503);assert.equal(deferred.body.code,'AUTH_DOMAIN_NOT_MIGRATED');assert.deepEqual(Object.keys(deferred.body).sort(),['code','message']);
   });
   await check('Mongo-only accounts, legacy HS256, malformed and unbound RS256 tokens cannot authenticate', async () => {
     const unknown = await api('auth/login', { method: 'POST', body: { email: 'unknown@example.invalid', password } });
@@ -246,9 +247,9 @@ try {
     for (const secret of secrets) assert.ok(!result.stderr.includes(secret));
   });
 let mappedAdminToken;
-  await check('explicitly reconciled Mongo identities retain owned profile reads while unreviewed clinical/admin routes fail closed', async () => {
+  await check('reconciled identities retain PostgreSQL self ownership while clinical and deferred admin boundaries remain closed', async () => {
     const original = await source.collection('users').findOne({ email: 'mongo-only@example.invalid' });
-    const patientProfile = { _id: new mongoose.Types.ObjectId(), user: original._id, uid: 'MID-HTTPMAPPED',
+    const patientProfile = { _id: new mongoose.Types.ObjectId(), user: original._id, uid: 'MID-HTTPMAP1',
       firstName: 'Synthetic', lastName: 'Mapped', qrCode: 'data:image/png;base64,SyntheticPreservedPatientQR', createdAt: original.createdAt };
     const adminMongoId = new mongoose.Types.ObjectId(), doctorMongoId = new mongoose.Types.ObjectId();
     const hospitalMongoId = new mongoose.Types.ObjectId(), doctorProfileId = new mongoose.Types.ObjectId(), createdAt = new Date();
@@ -277,30 +278,31 @@ let mappedAdminToken;
     const self = await api('patients/profile', { token: patient.body.token });
     assert.equal(self.status, 200); assert.equal(self.body.uid, patientProfile.uid);
     const qr = await api('patients/qr', { token: patient.body.token });
-    assert.equal(qr.status, 200); assert.equal(qr.body.qrCode, patientProfile.qrCode);
+    assert.equal(qr.status,200);assert.match(qr.body.qrCode,/^data:image\/png;base64,/);assert.equal(qr.body.uid,patientProfile.uid);
+    assert.equal((await source.collection('patients').findOne({_id:patientProfile._id})).qrCode,patientProfile.qrCode);
     const admin = await api('auth/login', { method: 'POST', body: { email: 'mapped-admin@example.invalid', password } });
     assert.equal(admin.status, 200); mappedAdminToken = admin.body.token;
     const hospital = await api('hospitals/admin/profile', { token: mappedAdminToken });
     assert.equal(hospital.status, 200); assert.equal(hospital.body.uid, 'HID-HTTPMAPPED');
     const dangerous = [
-      ['GET', 'doctor-portal/patient/MID-HTTPMAPPED', undefined],
-      ['GET', 'staff', undefined],
       ['POST', 'hospital-admin/doctor-login', { doctorId: String(doctorProfileId) }],
-      ['POST', 'reports/upload', {}],
-      ['PUT', 'appointments/' + newPostgresId() + '/status', { status: 'completed' }]
+      ['POST', 'reports/upload', {}]
     ];
     for (const [method, route, body] of dangerous) {
       const response = await api(route, { method, body, token: mappedAdminToken });
       assert.equal(response.status, 503, route + ': ' + JSON.stringify(response.body));
       assert.equal(response.body.code, 'AUTH_DOMAIN_NOT_MIGRATED');
     }
+    const adminClinical=await api('doctor-portal/patient/MID-HTTPMAP1',{token:mappedAdminToken});assert.equal(adminClinical.status,403);assert.equal(adminClinical.body.code,'CLINICAL_ACCESS_DENIED');
+    const staff=await api('staff',{token:mappedAdminToken});assert.equal(staff.status,200);assert.deepEqual(staff.body,[]);
+    const missingAppointment=await api('appointments/'+newPostgresId()+'/status',{method:'PUT',token:mappedAdminToken,body:{status:'completed'}});assert.equal(missingAppointment.status,404);assert.equal(missingAppointment.body.code,'APPOINTMENT_NOT_FOUND');
     const doctor = await api('auth/login', { method: 'POST', body: { email: 'mapped-doctor@example.invalid', password } });
     assert.equal(doctor.status, 200);
-    const clinical = await api('doctor-portal/patient/MID-HTTPMAPPED', { token: doctor.body.token });
-    assert.equal(clinical.status, 503); assert.equal(clinical.body.code, 'AUTH_DOMAIN_NOT_MIGRATED');
-    // A mapping alone cannot override authoritative core ownership.
+    const clinical = await api('doctor-portal/patient/MID-HTTPMAP1', { token: doctor.body.token });
+    assert.equal(clinical.status,403);assert.equal(clinical.body.code,'CLINICAL_ACCESS_DENIED');
+    // A legacy presentation mapping cannot redirect the PostgreSQL owner or EHR.
     await database.db.query('UPDATE auth_legacy_links SET patient_mongo_id=$1 WHERE user_id=$2', [String(doctorProfileId), patient.body.user.identityId]);
-    assert.equal((await api('patients/profile', { token: patient.body.token })).status, 403);
+    const unchanged=await api('patients/profile',{token:patient.body.token});assert.equal(unchanged.status,200);assert.equal(unchanged.body.uid,self.body.uid);assert.equal(unchanged.body.internalId,self.body.internalId);assert.notEqual(unchanged.body._id,String(doctorProfileId));
     await database.db.query('UPDATE auth_legacy_links SET patient_mongo_id=$1 WHERE user_id=$2', [String(patientProfile._id), patient.body.user.identityId]);
   });
   await check('a real Redis outage returns safe HTTP 503 for every security-critical operation', async () => {

@@ -317,3 +317,11 @@ Materialized UUIDv7 slots originate from active recurring templates using Postgr
 Hospital front desk is the owning admin or exact active linked receptionist, never generic staff or private-clinic front desk. Group-clinic practitioners manage only their own bookings/calendar. Support assistance grants no clinical authority. Provider cancellations guarantee full refunds or explicit current patient approval for transfer; patient cancellation uses the frozen snapshot. Secure provider adapters and database-owned financial history handle capture, expiry races, refunds and atomic rescheduling.
 
 DEPOSIT, TIME_BASED and MANUAL final confirmation remain distinct from patient acknowledgement. Confirmation creates one scheduled consultation window from slotStart - 10 minutes through slotStart + 2 hours; it opens no clinical API. BullMQ/explicit Redis own distributed lifecycle jobs with no Mongo/memory fallback. Appointment finance does not populate BillingRecord. ADR-020 and backend/prisma/APPOINTMENTS.md define the operational contract. Phase 2.6 clinical access and Phase 2.8 billing remain deferred.
+
+## Phase 2.6 operational clinical boundary (2026-11-01)
+
+ADR-021 and backend/prisma/CLINICAL_RECORDS.md define the current JavaScript/CommonJS implementation. CLINICAL_BACKEND requires explicit compatible selection; PostgreSQL activates only PATIENT_SELF and exact ACTIVE_CONSULTATION access. Trusted providers and existing Consent/AccessGrant/BreakGlassEvent rows are not operational access bases yet.
+
+Operational encounters derive their context from a valid Phase 2.5 split-domain appointment and frozen session window, recheck current organization membership and use narrow audited SQL functions. Canonical clinical records supply bounded longitudinal history and safe metadata; no clinical JSON is embedded in Patient. Audit denials persist after HTTP 403 and logs are append-only. Doctor-owned care, group-clinic isolation and public emergency-card privacy remain authoritative.
+
+Structured prescriptions do not dispense or bill. Metadata registration does not fetch or host objects. Appointment-less runtime creation, consent/break-glass workflows, diagnostic mutations, AI, amendments, backfill, production cutover and Phase 2.7/2.8/2.9 remain deferred.

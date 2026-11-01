@@ -236,3 +236,17 @@ GET /api/appointments/config exposes only backend. PostgreSQL routes are mounted
 GET /my, /hospital, /hospital/count and /doctor preserve scheduling views. PUT /:id/status allows explicit scoped transitions; date/time injection is rejected. POST /:id/reschedule takes slotId. POST /:id/check-in and DELETE /:id use current scoped authority. PUT /:id/pay retains the helper/route but requires an Idempotency-Key and invokes the secure provider service. Client fee/payment-success flags are rejected.
 
 Patients acknowledge through authenticated POST /:id/confirm. Public GET /confirm/:token remains single-use and distributed-rate-limited; acknowledgement does not bypass payment, TIME_BASED or MANUAL confirmation. Hospital polling remains supported; PostgreSQL mode enables no unauthenticated legacy sockets. Doctor scheduling metadata does not open doctor-portal patient/prescription APIs, which remain AUTH_DOMAIN_NOT_MIGRATED until Phase 2.6. Patient bills remain Phase 2.8.
+
+## Current Phase 2.6 clinical compatibility (2026-11-01)
+
+CLINICAL_BACKEND explicitly selects one doctor portal. PostgreSQL requires the full PostgreSQL auth/provider/patient/appointment stack; legacy clinical mode requires compatible legacy authentication. GET /api/clinical/config reveals only backend. Configuration, missing data and database failures never trigger Mongo EHR fallback.
+
+The doctor's queue returns own scheduling metadata and server-derived ehrAccess/opensAt/expiresAt without longitudinal EHR. GET /api/doctor-portal/patient/:uid uses canonical public MID and independently reauthorizes the exact active operational consultation. Safe CLINICAL_ACCESS_DENIED responses may include timing only for that doctor's own session. No hospital-admin, clinic-owner, receptionist, support, research or pharmacy bypass is retained in PostgreSQL mode.
+
+POST /api/doctor-portal/encounters/start takes appointmentId only. Record endpoints take the encounter path ID plus allowlisted clinical fields. POST /api/doctor-portal/prescription intentionally requires verified appointmentId/encounterId context selectors plus structured items; legacy prescriptionText is not parsed or accepted in PostgreSQL mode. Provenance IDs are server-derived. Completion is explicit and atomic. No generic clinical deletion endpoint exists.
+
+GET /api/clinical/me/encounters provides bounded structured patient-self history with limit/cursor. GET/PUT /api/patients/profile preserve Phase 2.4 demographics/benefits/trust while composing canonical medicalHistory and documents, plus read-only derived emergency allergies, active conditions and active prescription items. chronicConditions remains a documented active-condition presentation adapter, without a chronicity inference. clinicalHistoryPagination describes the recent summary and older encounter pages. Bills remain empty.
+
+POST /api/patients/documents registers bounded HTTPS metadata, rejects base64/data/blob/file/javascript references, credentials and query/fragment secrets, and derives self ownership with encounterId NULL. Local binary upload, destructive/soft document removal and clinician document creation remain unavailable. Unsafe historical references are redacted without changing stored metadata.
+
+The public emergency scan and authentication profile remain unchanged and expose none of the new clinical records. Trusted provider/Consent/AccessGrant/BreakGlassEvent rows grant no new authority. All current contracts, limits, audit persistence and deferred boundaries are in backend/prisma/CLINICAL_RECORDS.md.

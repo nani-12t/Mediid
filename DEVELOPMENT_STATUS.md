@@ -8,6 +8,7 @@ Single active repository: Mediid-main. Phase 2.3 implementation baseline: 061d7f
 Group-clinic correction baseline: b1548d87bb9c6b81da728bdd702a9895c2de6e99.
 Phase 2.4 implementation baseline: 908cb967afd9162e3a9be78d71cd13c477be4ffe (externally reviewed Phase 2.3 correction).
 Phase 2.5 implementation baseline: c14a2a21dd72776d69d08d7fa24d4be4863b62f5 (externally reviewed Phase 2.4).
+Phase 2.6 implementation baseline: 1251d57953ff8a93e2fa633a93cd3e836b082a0e (externally reviewed Phase 2.5 timezone correction).
 Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 
 | Phase | Status |
@@ -19,8 +20,61 @@ Workflow: direct-to-main; one tested phase commit, no intermediate pushes.
 | Phase 2.2B | COMPLETE (externally reviewed) |
 | Phase 2.3 | COMPLETE (externally reviewed, including group-clinic correction) |
 | Phase 2.4 | COMPLETE (externally reviewed) |
-| Phase 2.5 | IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW |
-| Phase 2.6 | NOT STARTED |
+| Phase 2.5 | COMPLETE (externally reviewed, including timezone correction) |
+| Phase 2.6 | IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW |
+| Phase 2.7 | NOT STARTED |
+| Phase 2.8 | NOT STARTED |
+| Phase 2.9 | NOT STARTED |
+
+## Phase 2.6 encounter-centered clinical records - 2026-11-01
+
+Phase 2.6 - IMPLEMENTED / TESTED / PENDING EXTERNAL REVIEW. Implementation began from clean main and fetched origin/main at the externally reviewed Phase 2.5 timezone correction, 1251d57953ff8a93e2fa633a93cd3e836b082a0e. Phase 2.5 and its correction are COMPLETE. Phase 2.7, 2.8 and 2.9 are NOT STARTED.
+
+The JavaScript/CommonJS clinical domain requires explicit CLINICAL_BACKEND=legacy|postgres. PostgreSQL clinical mode requires PostgreSQL auth, organizations, patients and appointments. Missing/auto/unknown/incompatible combinations fail startup; PostgreSQL clinical failures never select Mongo. The doctor portal selects one implementation and the public clinical config exposes only its backend.
+
+Migration thirteen, 202611010001_phase26_clinical_records, preserves all twelve reviewed migrations and the original Phase 1.3.1 context guard. It adds nullable Allergy.encounterId/Encounter.allergies, nullable AccessLog resourceType/resourceId/purpose/accessBasis, and nullable AccessLog.patientId only for unresolved denied/NONE decisions. Existing clinical history remains intact. Forward integrity checks stop on incompatible historical values instead of repairing/deleting them. There is no global encounter-per-appointment unique constraint.
+
+Exactly PATIENT_SELF and ACTIVE_CONSULTATION are operational EHR read bases. Current active User/Doctor, exact split-domain operational appointment/session, active organization, explicit current DoctorHospitalMembership, owned confirmed reservation and matching materialized slot are rechecked using PostgreSQL locks/time. Bounds must equal slotStart - 10 minutes and slotStart + 2 hours, with startsAt <= clock_timestamp() < expiresAt and status active. Neither primaryHospitalId nor clinic ownership provides authority. Trusted providers, Consent, AccessGrant and BreakGlassEvent rows grant no access. Hospital admin/staff/receptionist/support/buyer/pharmacy denials and group-clinic practitioner isolation passed actual database/HTTP checks.
+
+Every authenticated EHR read/write authorization decision appends a bounded AccessLog. SQL returns denied decisions after inserting the log; HTTP 403 occurs after the autocommitted statement. Unknown targets use no invented resource/patient ID. Runtime cannot update/delete/truncate audits or directly mutate clinical tables. Append-only triggers protect cascades too. Private helpers are revoked; only the two exact clinical entry-point signatures are granted, with fixed search paths and no research/financial grants.
+
+The doctor's bounded queue exposes scheduling/access hints without EHR. The patient endpoint independently authorizes a canonical MID lookup. Start locks the appointment, creates at zero encounters, reuses at one, and returns a durable reconciliation conflict at unexpected multiplicity. Completion atomically completes Encounter, the relevant appointment and ConsultationSession, preserving stable endTime under concurrent requests. Scheduling cannot complete an appointment while its encounter is in_progress. Completed care rejects normal clinical writes.
+
+Vitals preserve precise Decimal strings and derive BMI. SOAP notes, structured conditions and encounter-linked allergies derive their patient/author/provider context. Structured prescriptions require 1-50 bounded items; item failure or session expiry during item insertion rolls back the entire prescription/items while denial audit survives. Prescribing creates no dispensing, inventory or billing events. Historical child records with mismatched patient/encounter provenance are excluded from reads without modifying the source rows.
+
+Patient self history has stable descending encounter pagination and bounded nested facts. Profile medicalHistory/documents and read-only emergency arrays derive from canonical records. Active prescription items describe recorded medication, never adherence; active conditions make no chronicity inference. Auth profile and public emergency QR responses stay narrow. Document registration stores bounded HTTPS metadata only, rejects embedded/base64/credential/query/fragment references, never fetches URLs and does not host files. Unsafe historical references are redacted. Document deletion and clinician document creation are deferred.
+
+The doctor frontend loads the explicit clinical queue, displays server access state/safe denial timing, reads longitudinal history, starts/resumes encounters and submits vitals/SOAP/conditions/allergies/structured prescription items using appointment/encounter selectors only. Completion closes entry. Patient history includes the real compatibility summary and structured older pages; derived clinical fields are read-only. PostgreSQL documents use HTTPS references and never FileReader/base64. Existing booking/rescheduling uses authoritative IANA timezone/timeSlot and slot IDs.
+
+### Executed verification
+
+| Required check | Actual result |
+| --- | --- |
+| Prisma 6.19.3 validation / generation; JavaScript syntax | PASS / PASS; 60 source/script files PASS |
+| Clinical unit / native / actual Express HTTP | 12 / 26 / 21 PASS |
+| Independent clinical races | 7 PASS; distinct actual PostgreSQL sessions |
+| Original exact native schema / review / concurrency | 27 / 70 / 4 PASS |
+| Infrastructure unit / native deployment and permissions | 10 / 24 PASS; all thirteen migrations deployed |
+| Auth unit / native; sessions / provisioning / real Redis | 31 / 39 PASS; 13 / 13 / 5 PASS |
+| Identity reconciliation / hospital_staff / actual auth HTTP | 16 / 11 / 15 PASS |
+| Organization unit / native / group clinic / actual server | 8 / 26 / 28 / 14 PASS |
+| Patient unit / native / actual server | 12 / 33 / 16 PASS; native includes four races |
+| Appointment unit / native / actual HTTP / real BullMQ scheduler | 15 / 40 / 15 / 10 PASS |
+| Independent appointment races; provider timezone boundaries | 11 PASS; New York/date and exact-one tuple regressions PASS |
+| Mongo/Express legacy regressions | 20 PASS; none skipped |
+| All frontend tests / production build | 89 PASS across six suites, none skipped / PASS |
+
+The final clinical native, HTTP and seven-race evidence records the deployed migration SHA256 ad3ba330dae2481833b63df1f19dc03d5c4ca2895bea5a4bfe80105f5bf08f70, matching the final source. Final infrastructure, organization/patient/appointment HTTP gates also deployed that revision. Clinical coverage includes the real book-confirm-check-in-worker-window flow, exact expiry, null/inactive/tampered sessions, wrong actors/current membership, durable denials/audit immutability, historical multiplicity/provenance, public scan/profile boundaries, SQL grants, PostgreSQL/Redis outages and no Mongo fallback.
+
+Seven independent clinical races cover start/start canonicalization, blocked write versus expiry, cross-patient writes, membership removal, double completion with stable endTime, concurrent denied audits, and write versus completion. The prescription-expiry test uses real delayed item triggers and a nontransactional sequence to prove item processing ran before complete rollback. A native appointment materializer initially exceeded its unchanged 15-second test budget while three disposable suites competed for resources; isolated rerun passed all 40 checks and 11 races without changing SQL, timeouts or assertions.
+
+All required checks executed; none skipped. Existing historical HTTP fixtures now explicitly select the compatible five-domain stack and assert the newly reviewed route behavior, retaining authorization/outage/legacy boundaries. Generated historical PID and migration-count report changes are excluded. No dependencies or lockfiles changed. The production build passed with existing fs.F_OK/Browserslist notices.
+
+Not executed: production deployment/cutover, production data/backfill, real payment gateway transactions, real SMS/email delivery, production TLS/load validation, or a manual browser usability session. Test services used disposable synthetic PostgreSQL, Redis and MongoDB only. Phase 2.7 dispensing/inventory, Phase 2.8 unified billing, Phase 2.9 research, consent/grant/break-glass activation, diagnostics mutation, AI/NLP, document hosting/withdrawal and clinical amendments remain deferred.
+
+## Historical verification reports
+
+The reports below describe the repository at their recorded dates. Their old phase-status statements are superseded by the current table and Phase 2.6 report above.
 
 ## Phase 2.5 provider timezone correction - 2026-10-31
 

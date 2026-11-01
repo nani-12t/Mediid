@@ -7,7 +7,7 @@ import DoctorBooking from './DoctorBooking';
 import ConfirmAppointment from './ConfirmAppointment';
 import HospitalAppointments from '../hospital/Appointments';
 import DoctorDashboard from '../doctor/Dashboard';
-import { appointmentAPI, hospitalAPI } from '../../utils/api';
+import { appointmentAPI, hospitalAPI, clinicalAPI } from '../../utils/api';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { io } from 'socket.io-client';
@@ -27,6 +27,7 @@ jest.mock('react-hot-toast', () => ({ __esModule: true, default: Object.assign(j
 jest.mock('../../utils/api', () => ({
   __esModule: true, default: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
   hospitalAPI: { search: jest.fn() },
+  clinicalAPI: { getConfig: jest.fn(), doctorQueue: jest.fn() },
   appointmentAPI: {
     getConfig: jest.fn(), getAvailability: jest.fn(), create: jest.fn(), getMyAppointments: jest.fn(),
     getHospitalAppointments: jest.fn(), getPendingCount: jest.fn(), confirm: jest.fn(),
@@ -54,6 +55,8 @@ beforeEach(() => {
     hospital: { id: 'hospital-id', _id: 'hospital-id', name: 'Synthetic Hospital' },
     patient: { uid: 'MID-TEST0001', firstName: 'Synthetic', lastName: 'Patient' },
   };
+  clinicalAPI.getConfig.mockResolvedValue({ data: { backend: 'postgres' } });
+  clinicalAPI.doctorQueue.mockResolvedValue({ data: { appointments: [] } });
   appointmentAPI.getConfig.mockResolvedValue({ data: { backend: 'postgres' } });
   appointmentAPI.getMyAppointments.mockImplementation(async () => ({ data: [appointment] }));
   appointmentAPI.getHospitalAppointments.mockImplementation(async () => ({ data: [appointment] }));
@@ -241,10 +244,11 @@ test('hospital cannot force a deposit-mode online confirmation from its action b
   expect(button('Confirm').disabled).toBe(true);
 });
 
-test('PostgreSQL doctor view loads only scheduling metadata and never opens clinical routes or socket', async () => {
+test('PostgreSQL doctor view preserves scheduling and loads its explicit clinical queue without a legacy socket', async () => {
   await mount(<DoctorDashboard />);
   expect(appointmentAPI.getDoctorAppointments).toHaveBeenCalledTimes(1);
-  expect(container.textContent).toContain('Clinical records and prescribing are reserved for a later phase.');
+  expect(clinicalAPI.doctorQueue).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain('Clinical queue');
   expect(api.get).not.toHaveBeenCalled(); expect(io).not.toHaveBeenCalled();
 });
 

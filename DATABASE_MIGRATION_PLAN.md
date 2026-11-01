@@ -189,3 +189,11 @@ For an empty PostgreSQL database, apply both committed Phase 1.3.1 migrations in
 Deploy 202610300001_phase25_appointments_scheduler after the ten reviewed historical migrations with the separate migrator credential. Historical SQL remains unchanged. The migration adds starts_at and unique appointment-domain links to consultation_sessions, durable notification claims, narrow scheduling/finance/materialization/window functions and a membership deletion guard. Duplicate historical consultation links fail deployment for explicit review rather than being silently removed.
 
 New operational bookings use only hospital_appointments or private_clinic_appointments with valid organization, materialized interval and retained numbered reservation. This phase does not backfill Mongo history or populate BillingRecord/clinical records. PostgreSQL timezone conversion, frozen policy/deadline triggers, financial allocation and append-only history remain authoritative. Runtime gets scoped EXECUTE grants without direct reservation/finance/clinical writes. Configuration, tests and limitations: backend/prisma/APPOINTMENTS.md.
+
+## Phase 2.6 forward clinical migration (2026-11-01)
+
+Deploy all thirteen migrations in lexical order through the separate migrator. After the reviewed Phase 2.5 timezone correction 202610310001_phase25_availability_timezone, add 202611010001_phase26_clinical_records. None of the twelve historical migrations or UUID/public identity rules changes.
+
+The forward migration adds nullable Allergy.encounterId and its Encounter relation, nullable audit resourceType/resourceId/purpose/accessBasis, and nullable AccessLog.patientId solely for unresolved denied targets. Historical rows remain valid; incompatible documented clinical values cause migration failure without deletion or invented history. Read filters exclude inconsistent historical patient/encounter child provenance without rewriting source records.
+
+Only exact clinical function EXECUTE grants reach runtime. Audit retention, allergy provenance, encounter ordering and scheduling-completion guards are added forward-only. Operational encounter canonicalization uses parent locking rather than a global unique appointment/encounter constraint. Consent/grant/break-glass activation, pharmacy, billing, research and historical migration remain deferred. See CLINICAL_RECORDS.md.

@@ -29,7 +29,7 @@ try{
  const pair=generateKeyPairSync('rsa',{modulusLength:2048}),origin='https://appointments-http-synthetic.invalid',env={};
  for(const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','USERPROFILE'])if(process.env[key])env[key]=process.env[key];
  Object.assign(env,{
-  NODE_ENV:'test',HOST:'127.0.0.1',PORT:String(await freePort()),AUTH_BACKEND:'postgres',ORGANIZATION_BACKEND:'postgres',PATIENT_BACKEND:'postgres',APPOINTMENT_BACKEND:'postgres',
+  NODE_ENV:'test',HOST:'127.0.0.1',PORT:String(await freePort()),AUTH_BACKEND:'postgres',ORGANIZATION_BACKEND:'postgres',PATIENT_BACKEND:'postgres',APPOINTMENT_BACKEND:'postgres',CLINICAL_BACKEND:'postgres',
   APPOINTMENT_PAYMENT_PROVIDER:'test',APPOINTMENT_NOTIFICATION_DELIVERY:'disabled',APPOINTMENT_REDIS_URL:f.redis.url,APPOINTMENT_SCHEDULER_INTERVAL_MS:'250',APPOINTMENT_MATERIALIZE_DAYS_AHEAD:'7',APPOINTMENT_CONFIRM_SOURCE_MAX:'1000',APPOINTMENT_CONFIRM_IDENTITY_MAX:'1000',APPOINTMENT_QUEUE_NAMESPACE:'phase25-http-'+randomBytes(6).toString('hex'),
   PATIENT_AADHAAR_HASH_KEY:randomBytes(32).toString('hex'),PATIENT_SCAN_SOURCE_MAX:'1000',PATIENT_SCAN_IDENTITY_MAX:'1000',
   MONGO_URI:mongo.getUri('phase25_http_synthetic'),MARKETPLACE_URI:mongo.getUri('phase25_marketplace_synthetic'),DOTENV_CONFIG_PATH:path.join(f.cluster.root,'absent.env'),PG_ENV_FILE:path.join(f.cluster.root,'absent.env'),
@@ -125,12 +125,12 @@ try{
   const slot=await f.slot({hospital_id:h.clinic.id}),result=await api('appointments/'+clinicBooking.id+'/reschedule',{method:'POST',body:{slotId:slot.id}});ok(result);assert.equal(result.body.rescheduleCount,1);assert.ok(['pending','confirmed'].includes(result.body.status));assert.equal(result.body.confirmToken,null);assert.equal((await api('appointments/'+clinicBooking.id+'/pay',{method:'PUT',key:clinicPaymentKey,body:{}})).status,409);
   const rows=(await db.db.query('SELECT status FROM appointment_slot_reservations WHERE private_clinic_appointment_id=$1',[clinicBooking.id])).rows;assert.equal(rows.filter(item=>['HELD','CONFIRMED'].includes(item.status)).length,1);assert.equal(rows.filter(item=>item.status==='RELEASED').length,1);
  });
- await check('origin payload and deferred clinical boundaries remain closed in actual PostgreSQL server',async()=>{
+ await check('origin payload exact clinical authority and deferred billing boundaries remain closed in actual PostgreSQL server',async()=>{
   assert.equal((await api('appointments/'+clinicBooking.id+'/confirm',{method:'POST',originValue:'https://attacker.invalid',body:{}})).status,403);
   assert.equal((await api('appointments',{method:'POST',body:{notes:'x'.repeat(34000)}})).status,413);
-  for(const route of ['doctor-portal/patient/MID-SYNTH000','doctor-portal/prescription','patients/bills']){
-   const result=await api(route,{actor:route.startsWith('doctor')?'doctor':'patient0',method:route.endsWith('prescription')?'POST':'GET',...(route.endsWith('prescription')?{body:{}}:{})});assert.equal(result.status,503,route);assert.equal(result.body.code,'AUTH_DOMAIN_NOT_MIGRATED');
-  }
+  const ehr=await api('doctor-portal/patient/MID-SYNTH000',{actor:'doctor'});assert.equal(ehr.status,403);assert.equal(ehr.body.code,'CLINICAL_ACCESS_DENIED');
+  const prescription=await api('doctor-portal/prescription',{actor:'doctor',method:'POST',body:{}});assert.equal(prescription.status,400);assert.equal(prescription.body.code,'CLINICAL_INPUT');
+  const bills=await api('patients/bills');assert.equal(bills.status,503);assert.equal(bills.body.code,'AUTH_DOMAIN_NOT_MIGRATED');
   const socket=await fetch(base.replace('/api/','')+'/socket.io/?EIO=4&transport=polling',{signal:AbortSignal.timeout(10000)});assert.equal(socket.status,404);
  });
  await check('missing auto incompatible Redis and payment provider configurations fail actual server startup',async()=>{
@@ -149,7 +149,7 @@ try{
   await stop(low);
  });
  await check('explicit legacy mode remains mounted while PostgreSQL work leaves synthetic Mongo unchanged',async()=>{
-  const candidate={...env,PORT:String(await freePort()),AUTH_BACKEND:'legacy',ORGANIZATION_BACKEND:'legacy',PATIENT_BACKEND:'legacy',APPOINTMENT_BACKEND:'legacy'};delete candidate.APPOINTMENT_REDIS_URL;delete candidate.APPOINTMENT_PAYMENT_PROVIDER;
+  const candidate={...env,PORT:String(await freePort()),AUTH_BACKEND:'legacy',ORGANIZATION_BACKEND:'legacy',PATIENT_BACKEND:'legacy',APPOINTMENT_BACKEND:'legacy',CLINICAL_BACKEND:'legacy'};delete candidate.APPOINTMENT_REDIS_URL;delete candidate.APPOINTMENT_PAYMENT_PROVIDER;
   const legacy=launch(candidate);await ready(legacy);const legacyBase='http://127.0.0.1:'+candidate.PORT+'/api/';
   const config=await api('appointments/config',{baseUrl:legacyBase,actor:null,withCookies:false});ok(config);assert.deepEqual(config.body,{backend:'legacy'});
   assert.equal((await api('appointments/my',{baseUrl:legacyBase,actor:null,withCookies:false})).status,401);await stop(legacy);
